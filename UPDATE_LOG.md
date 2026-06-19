@@ -1,5 +1,10 @@
 # BridgeDesk Update Log
 
+## 1.2.8
+
+- Fixed Permanent Tunnel startup by writing a Cloudflare named-tunnel ingress config before running the tunnel.
+- Updated Permanent Tunnel launch so the fixed hostname routes to the local BridgeDesk server instead of returning Cloudflare 503 errors.
+
 ## 1.2.7
 
 - Added a ChatGPT compatibility fix so BridgeDesk advertises OAuth security schemes at the top level of each MCP tool as well as in tool metadata.

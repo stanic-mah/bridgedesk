@@ -1,6 +1,6 @@
 {
   "name": "bridgedesk",
-  "version": "1.2.7",
+  "version": "1.2.8",
   "description": "Desktop launcher and secure local MCP workspace bridge for ChatGPT and other MCP clients.",
   "type": "module",
   "main": "dist/server.js",

@@ -1,9 +1,9 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { createServer } from "node:net";
 import { homedir } from "node:os";
-import { dirname, parse, resolve } from "node:path";
+import { dirname, join, parse, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   app,
@@ -734,6 +734,61 @@ function getCloudflaredCommand(): string {
   return "cloudflared";
 }
 
+function yamlSingleQuoted(value: string): string {
+  return `'${value.replaceAll("'", "''")}'`;
+}
+
+function parseTunnelId(output: string): string | null {
+  return (
+    output.match(/\bID:\s*([0-9a-f-]{36})\b/i)?.[1] ??
+    output.match(/\bYour tunnel\s+([0-9a-f-]{36})\b/i)?.[1] ??
+    null
+  );
+}
+
+async function resolveTunnelId(tunnelName: string): Promise<string> {
+  const cloudflared = getCloudflaredCommand();
+  const result = await runCommand(cloudflared, ["tunnel", "info", tunnelName], 30000);
+  const tunnelId = parseTunnelId(result.text);
+  if (!result.ok && !tunnelId) {
+    throw new Error(`Could not find Cloudflare tunnel "${tunnelName}". Run Create Tunnel first.`);
+  }
+  if (!tunnelId) {
+    throw new Error(`Could not read the Cloudflare tunnel ID for "${tunnelName}".`);
+  }
+  return tunnelId;
+}
+
+async function writePermanentTunnelConfig(
+  tunnelName: string,
+  permanentHostname: string,
+  port: number,
+): Promise<string> {
+  const tunnelId = await resolveTunnelId(tunnelName);
+  const files = loadBridgeDeskFiles();
+  const cloudflaredDir = join(homedir(), ".cloudflared");
+  const credentialsFile = join(cloudflaredDir, `${tunnelId}.json`);
+  if (!existsSync(credentialsFile)) {
+    throw new Error(`Cloudflare credentials were not found for tunnel "${tunnelName}". Run Create Tunnel first.`);
+  }
+
+  mkdirSync(files.dir, { recursive: true });
+  const configPath = join(files.dir, "cloudflared-config.yml");
+  const hostname = new URL(permanentHostname).hostname;
+  const configText = [
+    `tunnel: ${tunnelId}`,
+    `credentials-file: ${yamlSingleQuoted(credentialsFile)}`,
+    "",
+    "ingress:",
+    `  - hostname: ${hostname}`,
+    `    service: http://127.0.0.1:${port}`,
+    "  - service: http_status:404",
+    "",
+  ].join("\n");
+  writeFileSync(configPath, configText, { encoding: "utf8", mode: 0o600 });
+  return configPath;
+}
+
 async function checkPort(port: number): Promise<SystemCheck> {
   return new Promise((resolveCheck) => {
     const server = createServer();
@@ -906,7 +961,7 @@ function startQuickTunnel(input: StartTunnelInput): void {
   });
 }
 
-function startPermanentTunnel(input: StartTunnelInput): void {
+async function startPermanentTunnel(input: StartTunnelInput): Promise<void> {
   if (tunnelProcess) return;
   const permanentHostname = normalizePermanentHostname(input.permanentHostname ?? input.publicBaseUrl);
   if (!permanentHostname) {
@@ -915,7 +970,8 @@ function startPermanentTunnel(input: StartTunnelInput): void {
   const tunnelName = normalizeTunnelName(input.permanentTunnelName);
   const port = input.port || DEFAULT_PORT;
   const cloudflared = getCloudflaredCommand();
-  const child = spawn(cloudflared, ["tunnel", "run", "--url", `http://127.0.0.1:${port}`, tunnelName], {
+  const configPath = await writePermanentTunnelConfig(tunnelName, permanentHostname, port);
+  const child = spawn(cloudflared, ["--config", configPath, "tunnel", "run", tunnelName], {
     shell: isWindowsAbsolutePath(cloudflared) ? false : commandShellOption(),
     windowsHide: true,
     stdio: ["ignore", "pipe", "pipe"],
@@ -940,6 +996,7 @@ function startPermanentTunnel(input: StartTunnelInput): void {
   }
 
   sendLog("tunnel", `Starting permanent Cloudflare tunnel ${tunnelName} for http://127.0.0.1:${port}`);
+  sendLog("tunnel", `Using Cloudflare config ${configPath}`);
   sendState();
 
   child.stdout?.on("data", (chunk: Buffer) => sendLog("tunnel", chunk.toString()));
@@ -954,10 +1011,10 @@ function startPermanentTunnel(input: StartTunnelInput): void {
   });
 }
 
-function startTunnel(input: StartTunnelInput): void {
+async function startTunnel(input: StartTunnelInput): Promise<void> {
   const tunnelMode = normalizeTunnelMode(input.tunnelMode);
   if (tunnelMode === "permanent") {
-    startPermanentTunnel(input);
+    await startPermanentTunnel(input);
     return;
   }
   startQuickTunnel(input);
@@ -1168,9 +1225,7 @@ ipcMain.handle("dialog:chooseProject", async () => {
 });
 ipcMain.handle("config:get", () => getConfigSummary());
 ipcMain.handle("config:save", (_event, input: SaveConfigInput) => saveConfig(input));
-ipcMain.handle("tunnel:start", (_event, input: StartTunnelInput) => {
-  startTunnel({ ...input, port: input.port || DEFAULT_PORT });
-});
+ipcMain.handle("tunnel:start", (_event, input: StartTunnelInput) => startTunnel({ ...input, port: input.port || DEFAULT_PORT }));
 ipcMain.handle("cloudflare:login", () => cloudflareLogin());
 ipcMain.handle("cloudflare:createTunnel", (_event, input: CloudflareTunnelInput) => createNamedTunnel(input));
 ipcMain.handle("cloudflare:routeDns", (_event, input: CloudflareTunnelInput) => routeTunnelDns(input));
