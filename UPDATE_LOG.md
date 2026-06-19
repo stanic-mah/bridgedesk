@@ -1,5 +1,10 @@
 # BridgeDesk Update Log
 
+## 1.2.5
+
+- Increased the ChatGPT client metadata fetch timeout so slower ChatGPT metadata URLs do not fail as `invalid_client`.
+- Cached ChatGPT metadata clients in BridgeDesk's OAuth client store so reconnects can avoid refetching the metadata document.
+
 ## 1.2.4
 
 - Saved ChatGPT OAuth client registrations so BridgeDesk can reconnect after the app or server restarts.

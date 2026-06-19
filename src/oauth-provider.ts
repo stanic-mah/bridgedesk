@@ -48,7 +48,7 @@ interface RefreshTokenRecord {
 }
 
 const CODE_TTL_MS = 5 * 60 * 1000;
-const CLIENT_METADATA_TIMEOUT_MS = 5000;
+const CLIENT_METADATA_TIMEOUT_MS = 30000;
 const LEGACY_BRIDGEDESK_CLIENT_ID = /^bridgedesk-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const CHATGPT_REDIRECT_URIS = [
   "https://oauth.openai.com/aip/oauth/callback",
@@ -277,6 +277,7 @@ export class InMemoryOAuthClientsStore implements OAuthRegisteredClientsStore {
       const client = normalizeClientMetadata(clientId, result.data);
       if (!client) return undefined;
       this.clients.set(client.client_id, client);
+      this.persistClients();
       return client;
     } catch {
       return undefined;
@@ -311,13 +312,20 @@ export class InMemoryOAuthClientsStore implements OAuthRegisteredClientsStore {
   private persistClients(): void {
     if (!this.persistencePath) return;
 
-    const clients = Array.from(this.clients.values()).filter((client) => client.client_id.startsWith("bridgedesk-"));
+    const clients = Array.from(this.clients.values()).filter((client) => this.shouldPersistClient(client));
     try {
       mkdirSync(dirname(this.persistencePath), { recursive: true });
       writeFileSync(this.persistencePath, JSON.stringify({ version: 1, clients }, null, 2) + "\n", { mode: 0o600 });
     } catch {
       // Persistence is best-effort; OAuth still works for the current process.
     }
+  }
+
+  private shouldPersistClient(client: OAuthClientInformationFull): boolean {
+    return (
+      client.client_id.startsWith("bridgedesk-") ||
+      clientMetadataDocumentAllowed(client.client_id, this.allowedRedirectHosts)
+    );
   }
 }
 

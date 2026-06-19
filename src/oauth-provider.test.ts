@@ -50,6 +50,43 @@ const metadataClient = await metadataStore.getClient("https://chatgpt.com/oauth/
 assert.equal(metadataClient?.client_id, "https://chatgpt.com/oauth/bridgedesk/client.json");
 assert.equal(metadataClient?.token_endpoint_auth_method, "none");
 
+const metadataClientStorePath = join(
+  mkdtempSync(join(tmpdir(), "bridgedesk-oauth-metadata-clients-")),
+  "oauth-clients.json",
+);
+let metadataFetchCount = 0;
+const persistentMetadataStore = new InMemoryOAuthClientsStore(
+  [".openai.com", ".chatgpt.com"],
+  async () => {
+    metadataFetchCount += 1;
+    return new Response(
+      JSON.stringify({
+        client_name: "ChatGPT",
+        redirect_uris: ["https://chatgpt.com/connector/oauth/ARgQFmJ3Oml"],
+        token_endpoint_auth_method: "none",
+        grant_types: ["authorization_code", "refresh_token"],
+        response_types: ["code"],
+      }),
+      { headers: { "Content-Type": "application/json" } },
+    );
+  },
+  metadataClientStorePath,
+);
+const chatGptClientId = "https://chatgpt.com/oauth/ARgQFmJ3Oml/client.json?token_endpoint_auth_method=none";
+const persistentMetadataClient = await persistentMetadataStore.getClient(chatGptClientId);
+assert.equal(persistentMetadataClient?.client_id, chatGptClientId);
+assert.equal(metadataFetchCount, 1);
+
+const reloadedMetadataStore = new InMemoryOAuthClientsStore(
+  [".openai.com", ".chatgpt.com"],
+  async () => {
+    throw new Error("metadata should be loaded from cache");
+  },
+  metadataClientStorePath,
+);
+const cachedMetadataClient = await reloadedMetadataStore.getClient(chatGptClientId);
+assert.equal(cachedMetadataClient?.client_id, chatGptClientId);
+
 const untrustedMetadataStore = new InMemoryOAuthClientsStore(
   [".openai.com", ".chatgpt.com"],
   async () =>
