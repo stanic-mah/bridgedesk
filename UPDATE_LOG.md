@@ -1,5 +1,10 @@
 # BridgeDesk Update Log
 
+## 1.2.1
+
+- Fixed ChatGPT connector creation by allowing trusted OpenAI and ChatGPT OAuth callback subdomains during dynamic client registration.
+- Improved update checks so an installed app at the latest version does not show the electron-updater semver error.
+
 ## 1.2.0
 
 - Added Quick Tunnel and Permanent Tunnel modes in the desktop launcher.

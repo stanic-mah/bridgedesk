@@ -61,6 +61,9 @@ BridgeDesk uses a single-user OAuth approval flow.
 | `BRIDGEDESK_OAUTH_SCOPES` | `bridgedesk` |
 | `BRIDGEDESK_OAUTH_ALLOWED_REDIRECT_HOSTS` | `chatgpt.com,localhost,127.0.0.1` |
 
+Redirect hosts can be exact hostnames or trusted suffixes such as
+`.openai.com`. The default allows ChatGPT and OpenAI OAuth callback hosts.
+
 MCP clients discover metadata from:
 
 ```text

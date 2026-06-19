@@ -134,8 +134,21 @@ function redirectHostAllowed(redirectUri: string, allowedHosts: string[]): boole
     return false;
   }
 
-  if (["localhost", "127.0.0.1", "[::1]"].includes(parsed.hostname)) return true;
-  return allowedHosts.includes(parsed.hostname);
+  const hostname = parsed.hostname.toLowerCase();
+  if (["localhost", "127.0.0.1", "[::1]"].includes(hostname)) return true;
+  return allowedHosts.some((entry) => {
+    const allowed = entry.trim().toLowerCase();
+    if (!allowed) return false;
+    if (allowed.startsWith("*.")) {
+      const suffix = allowed.slice(1);
+      return hostname.endsWith(suffix) && hostname !== suffix.slice(1);
+    }
+    if (allowed.startsWith(".")) {
+      const root = allowed.slice(1);
+      return hostname === root || hostname.endsWith(allowed);
+    }
+    return hostname === allowed;
+  });
 }
 
 export class InMemoryOAuthClientsStore implements OAuthRegisteredClientsStore {

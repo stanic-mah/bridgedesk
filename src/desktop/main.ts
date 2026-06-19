@@ -110,6 +110,7 @@ const DEFAULT_PERMANENT_TUNNEL_NAME = "bridgedesk";
 const APP_ID = "com.bridgedesk.app";
 const RELEASES_URL = "https://github.com/stanic-mah/bridgedesk/releases";
 const LATEST_RELEASE_URL = `${RELEASES_URL}/latest`;
+const LATEST_YML_URL = `${LATEST_RELEASE_URL}/download/latest.yml`;
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const cliPath = resolve(__dirname, "../cli.js");
 const require = createRequire(import.meta.url);
@@ -457,7 +458,6 @@ async function checkForUpdates(trigger: "auto" | "manual"): Promise<UpdateStatus
   }
   if (updateStatus.state === "checking" || updateStatus.state === "downloading") return updateStatus;
 
-  configureAutoUpdater();
   try {
     setUpdateStatus({
       state: "checking",
@@ -465,9 +465,36 @@ async function checkForUpdates(trigger: "auto" | "manual"): Promise<UpdateStatus
       error: null,
       percent: null,
     });
+
+    const latestVersion = await fetchLatestReleaseVersion();
+    if (latestVersion) {
+      const comparison = compareAppVersions(latestVersion, app.getVersion());
+      if (comparison <= 0) {
+        return setUpdateStatus({
+          state: "not-available",
+          message: `BridgeDesk ${app.getVersion()} is up to date.`,
+          availableVersion: null,
+          percent: null,
+          error: null,
+        });
+      }
+      setUpdateStatus({
+        state: "available",
+        message: `BridgeDesk ${latestVersion} is available.`,
+        availableVersion: latestVersion,
+        percent: null,
+        error: null,
+      });
+    }
+
+    configureAutoUpdater();
     await autoUpdater.checkForUpdates();
   } catch (error) {
     const message = formatError(error);
+    if (message.includes("semver_1.eq") && updateStatus.state === "available") {
+      sendLog("system", `Automatic update check failed; use Releases to download BridgeDesk ${updateStatus.availableVersion}.`);
+      return updateStatus;
+    }
     setUpdateStatus({
       state: "error",
       message: "Update check failed.",
@@ -477,6 +504,35 @@ async function checkForUpdates(trigger: "auto" | "manual"): Promise<UpdateStatus
     sendLog("system", `Update check failed: ${message}`);
   }
   return updateStatus;
+}
+
+async function fetchLatestReleaseVersion(): Promise<string | null> {
+  try {
+    const response = await fetch(LATEST_YML_URL, {
+      headers: { "User-Agent": `BridgeDesk/${app.getVersion()}` },
+    });
+    if (!response.ok) return null;
+    const text = await response.text();
+    return text.match(/^version:\s*([0-9]+\.[0-9]+\.[0-9]+)/m)?.[1] ?? null;
+  } catch (error) {
+    sendLog("system", `Latest version precheck failed: ${formatError(error)}`);
+    return null;
+  }
+}
+
+function compareAppVersions(left: string, right: string): number {
+  const parseVersion = (value: string): number[] =>
+    value
+      .split(".")
+      .slice(0, 3)
+      .map((part) => Number(part.replace(/\D.*$/, "")) || 0);
+  const leftParts = parseVersion(left);
+  const rightParts = parseVersion(right);
+  for (let index = 0; index < 3; index += 1) {
+    const diff = (leftParts[index] ?? 0) - (rightParts[index] ?? 0);
+    if (diff !== 0) return diff;
+  }
+  return 0;
 }
 
 function normalizePublicBaseUrl(value: string | null | undefined): string | null {

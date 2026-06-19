@@ -87,8 +87,10 @@ assert.equal(loadConfig(baseEnv).oauth.ownerToken, "test-owner-token-that-is-lon
 assert.deepEqual(loadConfig(baseEnv).oauth.scopes, ["bridgedesk", "offline_access"]);
 assert.deepEqual(loadConfig(baseEnv).oauth.allowedRedirectHosts, [
   "chatgpt.com",
+  ".chatgpt.com",
   "www.chatgpt.com",
   "chat.openai.com",
+  ".openai.com",
   "localhost",
   "127.0.0.1",
 ]);
