@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from "node:child_process";
+import { existsSync } from "node:fs";
 import { createServer } from "node:net";
 import { homedir } from "node:os";
 import { dirname, parse, resolve } from "node:path";
@@ -38,6 +39,14 @@ const APP_ID = "com.bridgedesk.app";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const cliPath = resolve(__dirname, "../cli.js");
 const isWindows = process.platform === "win32";
+const WINDOWS_BASH_CANDIDATES = [
+  "C:\\Program Files\\Git\\bin\\bash.exe",
+  "C:\\Program Files\\Git\\usr\\bin\\bash.exe",
+];
+const WINDOWS_CLOUDFLARED_CANDIDATES = [
+  "C:\\Program Files\\cloudflared\\cloudflared.exe",
+  "C:\\Program Files (x86)\\cloudflared\\cloudflared.exe",
+];
 
 let mainWindow: BrowserWindow | null = null;
 let tunnelProcess: ChildProcess | null = null;
@@ -125,10 +134,14 @@ function commandShellOption(): boolean {
   return isWindows;
 }
 
+function isWindowsAbsolutePath(command: string): boolean {
+  return isWindows && /^[a-zA-Z]:[\\/]/.test(command);
+}
+
 function runCommand(command: string, args: string[], timeoutMs = 5000): Promise<{ ok: boolean; text: string }> {
   return new Promise((resolveCommand) => {
     const child = spawn(command, args, {
-      shell: commandShellOption(),
+      shell: isWindowsAbsolutePath(command) ? false : commandShellOption(),
       windowsHide: true,
       stdio: ["ignore", "pipe", "pipe"],
     });
@@ -170,10 +183,7 @@ async function checkBash(): Promise<SystemCheck> {
     return { id: "bash", label: "Git Bash", status: "ok", detail: direct.text.split(/\r?\n/)[0] ?? "Available" };
   }
   if (isWindows) {
-    for (const candidate of [
-      "C:\\Program Files\\Git\\bin\\bash.exe",
-      "C:\\Program Files\\Git\\usr\\bin\\bash.exe",
-    ]) {
+    for (const candidate of WINDOWS_BASH_CANDIDATES) {
       const result = await runCommand(candidate, ["--version"]);
       if (result.ok) {
         return { id: "bash", label: "Git Bash", status: "ok", detail: candidate };
@@ -181,6 +191,36 @@ async function checkBash(): Promise<SystemCheck> {
     }
   }
   return { id: "bash", label: "Git Bash", status: "missing", detail: "Not found" };
+}
+
+async function checkCloudflared(): Promise<SystemCheck> {
+  const direct = await runCommand("cloudflared", ["--version"]);
+  if (direct.ok) {
+    return {
+      id: "cloudflared",
+      label: "Cloudflare Tunnel",
+      status: "ok",
+      detail: direct.text.split(/\r?\n/)[0] ?? "Available",
+    };
+  }
+  if (isWindows) {
+    for (const candidate of WINDOWS_CLOUDFLARED_CANDIDATES) {
+      const result = await runCommand(candidate, ["--version"]);
+      if (result.ok) {
+        return { id: "cloudflared", label: "Cloudflare Tunnel", status: "ok", detail: candidate };
+      }
+    }
+  }
+  return { id: "cloudflared", label: "Cloudflare Tunnel", status: "missing", detail: direct.text || "Not found" };
+}
+
+function getCloudflaredCommand(): string {
+  if (isWindows) {
+    for (const candidate of WINDOWS_CLOUDFLARED_CANDIDATES) {
+      if (existsSync(candidate)) return candidate;
+    }
+  }
+  return "cloudflared";
 }
 
 async function checkPort(port: number): Promise<SystemCheck> {
@@ -214,7 +254,7 @@ async function getSystemChecks(port: number): Promise<SystemCheck[]> {
     checkCommand("npm", "npm", "npm", ["--version"]),
     checkCommand("git", "Git", "git", ["--version"]),
     checkBash(),
-    checkCommand("cloudflared", "Cloudflare Tunnel", "cloudflared", ["--version"]),
+    checkCloudflared(),
     checkPort(port),
   ]);
   const cli = await runCommand("node", [cliPath, "help"]);
@@ -295,8 +335,9 @@ function captureTunnelUrl(text: string, projectRoot: string | null, port: number
 
 function startTunnel(projectRoot: string | null, port: number): void {
   if (tunnelProcess) return;
-  const child = spawn("cloudflared", ["tunnel", "--url", `http://127.0.0.1:${port}`], {
-    shell: commandShellOption(),
+  const cloudflared = getCloudflaredCommand();
+  const child = spawn(cloudflared, ["tunnel", "--url", `http://127.0.0.1:${port}`], {
+    shell: isWindowsAbsolutePath(cloudflared) ? false : commandShellOption(),
     windowsHide: true,
     stdio: ["ignore", "pipe", "pipe"],
   });

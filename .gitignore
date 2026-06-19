@@ -2,5 +2,6 @@ node_modules/
 dist/
 releases/
 release/
+release-fixed/
 .env
 *.log
