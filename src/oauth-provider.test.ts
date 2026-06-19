@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { existsSync, mkdtempSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { InMemoryOAuthClientsStore } from "./oauth-provider.js";
 
 const store = new InMemoryOAuthClientsStore([".openai.com", ".chatgpt.com"]);
@@ -61,3 +64,24 @@ const untrustedMetadataStore = new InMemoryOAuthClientsStore(
 );
 assert.equal(await untrustedMetadataStore.getClient("https://chatgpt.com/oauth/bad/client.json"), undefined);
 assert.equal(await metadataStore.getClient("https://example.com/oauth/client.json"), undefined);
+
+const clientStorePath = join(mkdtempSync(join(tmpdir(), "bridgedesk-oauth-clients-")), "oauth-clients.json");
+const persistentStore = new InMemoryOAuthClientsStore([".openai.com", ".chatgpt.com"], fetch, clientStorePath);
+const persistentClient = persistentStore.registerClient({
+  client_name: "Persistent ChatGPT",
+  redirect_uris: ["https://chatgpt.com/aip/oauth/callback"],
+  token_endpoint_auth_method: "none",
+  grant_types: ["authorization_code", "refresh_token"],
+  response_types: ["code"],
+});
+assert.equal(existsSync(clientStorePath), true);
+assert.match(readFileSync(clientStorePath, "utf8"), /Persistent ChatGPT/);
+
+const reloadedStore = new InMemoryOAuthClientsStore([".openai.com", ".chatgpt.com"], fetch, clientStorePath);
+const reloadedClient = await reloadedStore.getClient(persistentClient.client_id);
+assert.equal(reloadedClient?.client_id, persistentClient.client_id);
+assert.deepEqual(reloadedClient?.redirect_uris, ["https://chatgpt.com/aip/oauth/callback"]);
+
+const legacyClient = await reloadedStore.getClient("bridgedesk-00000000-0000-4000-8000-000000000000");
+assert.equal(legacyClient?.client_id, "bridgedesk-00000000-0000-4000-8000-000000000000");
+assert.ok(legacyClient?.redirect_uris.includes("https://chatgpt.com/aip/oauth/callback"));

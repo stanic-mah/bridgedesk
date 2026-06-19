@@ -1,5 +1,11 @@
 # BridgeDesk Update Log
 
+## 1.2.4
+
+- Saved ChatGPT OAuth client registrations so BridgeDesk can reconnect after the app or server restarts.
+- Added recovery for existing ChatGPT apps that already hold an older temporary `bridgedesk-...` client ID.
+- Kept the fixed Permanent Tunnel MCP URL unchanged while improving the OAuth connection flow.
+
 ## 1.2.3
 
 - Added ChatGPT Client ID Metadata Document support so connector setup can use ChatGPT's stable OAuth client metadata path instead of relying only on dynamic client registration.

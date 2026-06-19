@@ -170,7 +170,11 @@ function parseRequiredSecret(value: string | undefined, name: string): string {
   return secret;
 }
 
-function parseOAuthConfig(env: NodeJS.ProcessEnv, ownerToken: string | undefined): OAuthConfig {
+function parseOAuthConfig(
+  env: NodeJS.ProcessEnv,
+  ownerToken: string | undefined,
+  clientStorePath: string,
+): OAuthConfig {
   return {
     ownerToken: parseRequiredSecret(env.BRIDGEDESK_OAUTH_OWNER_TOKEN ?? ownerToken, "BRIDGEDESK_OAUTH_OWNER_TOKEN"),
     accessTokenTtlSeconds: parsePositiveInteger(
@@ -193,6 +197,7 @@ function parseOAuthConfig(env: NodeJS.ProcessEnv, ownerToken: string | undefined
       "localhost",
       "127.0.0.1",
     ]),
+    clientStorePath: resolve(expandHomePath(env.BRIDGEDESK_OAUTH_CLIENT_STORE ?? clientStorePath)),
   };
 }
 
@@ -227,7 +232,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
   return {
     host,
     port,
-    oauth: parseOAuthConfig(env, files.auth.ownerToken),
+    oauth: parseOAuthConfig(env, files.auth.ownerToken, join(files.dir, "oauth-clients.json")),
     allowedRoots: parseAllowedRoots(env.BRIDGEDESK_ALLOWED_ROOTS ?? files.config.allowedRoots),
     allowedHosts: parseAllowedHosts(env.BRIDGEDESK_ALLOWED_HOSTS, derivedAllowedHosts),
     publicBaseUrl,

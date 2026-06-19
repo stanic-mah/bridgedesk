@@ -1,10 +1,13 @@
 import { timingSafeEqual, randomBytes, randomUUID, createHash } from "node:crypto";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
 import type { Response } from "express";
 import type { OAuthRegisteredClientsStore } from "@modelcontextprotocol/sdk/server/auth/clients.js";
 import type { OAuthServerProvider, AuthorizationParams } from "@modelcontextprotocol/sdk/server/auth/provider.js";
 import { AccessDeniedError, InvalidGrantError, InvalidRequestError, InvalidTokenError } from "@modelcontextprotocol/sdk/server/auth/errors.js";
 import type { AuthInfo } from "@modelcontextprotocol/sdk/server/auth/types.js";
 import {
+  OAuthClientInformationFullSchema,
   OAuthClientMetadataSchema,
   type OAuthClientMetadata,
   type OAuthClientInformationFull,
@@ -19,6 +22,7 @@ export interface OAuthConfig {
   refreshTokenTtlSeconds: number;
   scopes: string[];
   allowedRedirectHosts: string[];
+  clientStorePath?: string;
 }
 
 interface AuthorizationCodeRecord {
@@ -45,6 +49,15 @@ interface RefreshTokenRecord {
 
 const CODE_TTL_MS = 5 * 60 * 1000;
 const CLIENT_METADATA_TIMEOUT_MS = 5000;
+const LEGACY_BRIDGEDESK_CLIENT_ID = /^bridgedesk-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const CHATGPT_REDIRECT_URIS = [
+  "https://oauth.openai.com/aip/oauth/callback",
+  "https://chatgpt.com/aip/oauth/callback",
+  "https://chat.openai.com/aip/oauth/callback",
+  "https://connect.chatgpt.com/oauth/callback",
+  "https://chatgpt.com/backend-api/aip/oauth/callback",
+  "https://chat.openai.com/backend-api/aip/oauth/callback",
+];
 
 type FetchClientMetadata = typeof fetch;
 
@@ -182,17 +195,45 @@ function normalizeClientMetadata(
   };
 }
 
+function legacyBridgeDeskClient(
+  clientId: string,
+  allowedHosts: string[],
+): OAuthClientInformationFull | undefined {
+  if (!LEGACY_BRIDGEDESK_CLIENT_ID.test(clientId)) return undefined;
+
+  const redirectUris = CHATGPT_REDIRECT_URIS.filter((uri) => redirectHostAllowed(uri, allowedHosts));
+  if (redirectUris.length === 0) return undefined;
+
+  return {
+    client_id: clientId,
+    client_name: "ChatGPT",
+    redirect_uris: redirectUris,
+    token_endpoint_auth_method: "none",
+    grant_types: ["authorization_code", "refresh_token"],
+    response_types: ["code"],
+  };
+}
+
 export class InMemoryOAuthClientsStore implements OAuthRegisteredClientsStore {
   private readonly clients = new Map<string, OAuthClientInformationFull>();
 
   constructor(
     private readonly allowedRedirectHosts: string[],
     private readonly fetchClientMetadata: FetchClientMetadata = fetch,
-  ) {}
+    private readonly persistencePath?: string,
+  ) {
+    this.loadPersistedClients();
+  }
 
   getClient(clientId: string): OAuthClientInformationFull | undefined | Promise<OAuthClientInformationFull | undefined> {
     const registered = this.clients.get(clientId);
     if (registered) return registered;
+    const legacyClient = legacyBridgeDeskClient(clientId, this.allowedRedirectHosts);
+    if (legacyClient) {
+      this.clients.set(legacyClient.client_id, legacyClient);
+      this.persistClients();
+      return legacyClient;
+    }
     if (!clientMetadataDocumentAllowed(clientId, this.allowedRedirectHosts)) return undefined;
     return this.getClientFromMetadataDocument(clientId);
   }
@@ -214,6 +255,7 @@ export class InMemoryOAuthClientsStore implements OAuthRegisteredClientsStore {
       response_types: client.response_types ?? ["code"],
     };
     this.clients.set(registered.client_id, registered);
+    this.persistClients();
     return registered;
   }
 
@@ -242,6 +284,41 @@ export class InMemoryOAuthClientsStore implements OAuthRegisteredClientsStore {
       clearTimeout(timer);
     }
   }
+
+  private loadPersistedClients(): void {
+    if (!this.persistencePath || !existsSync(this.persistencePath)) return;
+
+    try {
+      const parsed = JSON.parse(readFileSync(this.persistencePath, "utf8")) as unknown;
+      const entries =
+        typeof parsed === "object" && parsed !== null && "clients" in parsed && Array.isArray(parsed.clients)
+          ? parsed.clients
+          : Array.isArray(parsed)
+            ? parsed
+            : [];
+
+      for (const entry of entries) {
+        const result = OAuthClientInformationFullSchema.safeParse(entry);
+        if (!result.success) continue;
+        if (!result.data.redirect_uris.every((uri) => redirectHostAllowed(uri, this.allowedRedirectHosts))) continue;
+        this.clients.set(result.data.client_id, result.data);
+      }
+    } catch {
+      // A corrupt cache should not prevent BridgeDesk from starting.
+    }
+  }
+
+  private persistClients(): void {
+    if (!this.persistencePath) return;
+
+    const clients = Array.from(this.clients.values()).filter((client) => client.client_id.startsWith("bridgedesk-"));
+    try {
+      mkdirSync(dirname(this.persistencePath), { recursive: true });
+      writeFileSync(this.persistencePath, JSON.stringify({ version: 1, clients }, null, 2) + "\n", { mode: 0o600 });
+    } catch {
+      // Persistence is best-effort; OAuth still works for the current process.
+    }
+  }
 }
 
 export class SingleUserOAuthProvider implements OAuthServerProvider {
@@ -256,7 +333,11 @@ export class SingleUserOAuthProvider implements OAuthServerProvider {
     resourceServerUrl: URL,
   ) {
     this.resourceServerUrl = resourceUrlFromServerUrl(resourceServerUrl);
-    this.clientsStore = new InMemoryOAuthClientsStore(config.allowedRedirectHosts);
+    this.clientsStore = new InMemoryOAuthClientsStore(
+      config.allowedRedirectHosts,
+      fetch,
+      config.clientStorePath,
+    );
   }
 
   async authorize(

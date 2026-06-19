@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadConfig } from "./config.js";
 
@@ -96,6 +96,7 @@ assert.deepEqual(loadConfig(baseEnv).oauth.allowedRedirectHosts, [
 ]);
 assert.equal(loadConfig(baseEnv).oauth.accessTokenTtlSeconds, 3600);
 assert.equal(loadConfig(baseEnv).oauth.refreshTokenTtlSeconds, 2592000);
+assert.equal(loadConfig(baseEnv).oauth.clientStorePath, join(emptyConfigDir, "oauth-clients.json"));
 
 assert.deepEqual(
   loadConfig({ ...baseEnv, BRIDGEDESK_OAUTH_SCOPES: "bridgedesk,admin" }).oauth.scopes,
@@ -115,6 +116,11 @@ assert.equal(
   loadConfig({ ...baseEnv, BRIDGEDESK_OAUTH_REFRESH_TOKEN_TTL_SECONDS: "240" }).oauth
     .refreshTokenTtlSeconds,
   240,
+);
+assert.equal(
+  loadConfig({ ...baseEnv, BRIDGEDESK_OAUTH_CLIENT_STORE: "~/custom-oauth-clients.json" }).oauth
+    .clientStorePath,
+  join(homedir(), "custom-oauth-clients.json"),
 );
 
 assert.throws(
