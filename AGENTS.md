@@ -32,3 +32,6 @@ Core constraints:
 - Keep the launcher focused on setup, tunnels, process control, and MCP handoff;
   avoid adding unrelated workflow features before validating with real MCP
   clients.
+- Before any commit and push, update the app version first and add the matching
+  entry to `UPDATE_LOG.md`. Do not commit release-worthy app changes without the
+  version and update log already matching.

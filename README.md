@@ -1,9 +1,27 @@
 # BridgeDesk
 
+## About
+
 BridgeDesk is a desktop launcher and local MCP workspace server for ChatGPT and
 other MCP clients. It lets a trusted MCP client work with selected local project
 folders through explicit tools for reading, editing, searching, running commands,
 and showing changes.
+
+BridgeDesk is Windows-first. It is designed for local development workflows
+where you choose one approved project folder, start the BridgeDesk server, and
+connect an MCP-capable client through the generated MCP URL.
+
+## Download BridgeDesk
+
+For normal Windows use, download the latest installer from GitHub Releases:
+
+```text
+https://github.com/stanic-mah/bridgedesk/releases/latest/download/BridgeDesk-Setup.exe
+```
+
+The installer build supports BridgeDesk's in-app update checks. A portable exe
+is also attached to each release for manual use, but the installer is the
+recommended download.
 
 BridgeDesk has two entrypoints:
 

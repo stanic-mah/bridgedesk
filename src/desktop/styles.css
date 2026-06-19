@@ -136,6 +136,48 @@ p {
   font-size: 13px;
 }
 
+#app-version {
+  font-weight: 600;
+  color: #1f5d50;
+}
+
+.about-panel {
+  display: grid;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid #d9ddd5;
+  border-radius: 6px;
+  background: #ffffff;
+}
+
+.about-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.about-actions button {
+  min-height: 32px;
+  padding: 0 8px;
+  font-size: 12px;
+}
+
+.update-status {
+  color: #687065;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.update-available,
+.update-downloaded {
+  color: #1f5d50;
+  font-weight: 600;
+}
+
+.update-error {
+  color: #a43f35;
+}
+
 .checks {
   display: grid;
   gap: 8px;

@@ -1,7 +1,10 @@
 import { contextBridge, ipcRenderer } from "electron";
 
 contextBridge.exposeInMainWorld("bridgeDesk", {
+  getAppInfo: () => ipcRenderer.invoke("app:info"),
   getSystemChecks: (port: number) => ipcRenderer.invoke("system:checks", port),
+  getUpdateStatus: () => ipcRenderer.invoke("update:status"),
+  checkForUpdates: () => ipcRenderer.invoke("update:check"),
   chooseProject: () => ipcRenderer.invoke("dialog:chooseProject"),
   getConfig: () => ipcRenderer.invoke("config:get"),
   saveConfig: (input: unknown) => ipcRenderer.invoke("config:save", input),
@@ -20,5 +23,10 @@ contextBridge.exposeInMainWorld("bridgeDesk", {
     const listener = (_event: Electron.IpcRendererEvent, state: unknown) => callback(state);
     ipcRenderer.on("state:update", listener);
     return () => ipcRenderer.removeListener("state:update", listener);
+  },
+  onUpdateStatus: (callback: (state: unknown) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, state: unknown) => callback(state);
+    ipcRenderer.on("update:status", listener);
+    return () => ipcRenderer.removeListener("update:status", listener);
   },
 });

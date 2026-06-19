@@ -28,6 +28,33 @@ interface LauncherState {
   mcpUrl: string | null;
 }
 
+type UpdateState =
+  | "idle"
+  | "disabled"
+  | "checking"
+  | "available"
+  | "downloading"
+  | "downloaded"
+  | "not-available"
+  | "error";
+
+interface AppInfo {
+  version: string;
+  isPackaged: boolean;
+  latestReleaseUrl: string;
+  releasesUrl: string;
+  updateSupported: boolean;
+}
+
+interface UpdateStatus {
+  state: UpdateState;
+  message: string;
+  currentVersion: string;
+  availableVersion: string | null;
+  percent: number | null;
+  error: string | null;
+}
+
 interface LogEntry {
   source: "system" | "tunnel" | "server";
   message: string;
@@ -37,7 +64,10 @@ interface LogEntry {
 declare global {
   interface Window {
     bridgeDesk: {
+      getAppInfo(): Promise<AppInfo>;
       getSystemChecks(port: number): Promise<SystemCheck[]>;
+      getUpdateStatus(): Promise<UpdateStatus>;
+      checkForUpdates(): Promise<UpdateStatus>;
       chooseProject(): Promise<string | null>;
       getConfig(): Promise<ConfigSummary>;
       saveConfig(input: { projectRoot: string; publicBaseUrl: string | null; port: number }): Promise<ConfigSummary>;
@@ -49,6 +79,7 @@ declare global {
       openExternal(url: string): Promise<void>;
       onLog(callback: (entry: LogEntry) => void): () => void;
       onStateUpdate(callback: (state: LauncherState) => void): () => void;
+      onUpdateStatus(callback: (state: UpdateStatus) => void): () => void;
     };
   }
 }
@@ -69,6 +100,8 @@ const state = {
   logs: [] as LogEntry[],
   tunnelRunning: false,
   serverRunning: false,
+  appInfo: null as AppInfo | null,
+  updateStatus: null as UpdateStatus | null,
 };
 
 function requiredElement<T extends HTMLElement>(id: string): T {
@@ -79,6 +112,10 @@ function requiredElement<T extends HTMLElement>(id: string): T {
 
 const elements = {
   checks: requiredElement<HTMLDivElement>("checks"),
+  appVersion: requiredElement<HTMLSpanElement>("app-version"),
+  updateStatus: requiredElement<HTMLDivElement>("update-status"),
+  checkUpdates: requiredElement<HTMLButtonElement>("check-updates"),
+  openReleases: requiredElement<HTMLButtonElement>("open-releases"),
   projectRoot: requiredElement<HTMLInputElement>("project-root"),
   publicBaseUrl: requiredElement<HTMLInputElement>("public-base-url"),
   port: requiredElement<HTMLInputElement>("port"),
@@ -171,6 +208,17 @@ function renderLogs(): void {
     .join("\n");
 }
 
+function renderUpdateStatus(): void {
+  const status = state.updateStatus;
+  if (!status) {
+    elements.updateStatus.textContent = "Checking update status...";
+    elements.updateStatus.className = "update-status";
+    return;
+  }
+  elements.updateStatus.textContent = status.error ? `${status.message} ${status.error}` : status.message;
+  elements.updateStatus.className = `update-status update-${status.state}`;
+}
+
 function renderControls(): void {
   const hasProject = state.projectRoot.length > 0;
   const hasPublicUrl = elements.publicBaseUrl.value.trim().length > 0;
@@ -181,13 +229,24 @@ function renderControls(): void {
   elements.stopAll.disabled = !state.tunnelRunning && !state.serverRunning;
   elements.copyMcp.disabled = !state.mcpUrl;
   elements.copyOwner.disabled = !state.ownerPassword;
+  elements.checkUpdates.disabled =
+    state.updateStatus?.state === "checking" || state.updateStatus?.state === "downloading";
 }
 
 function renderAll(): void {
   renderChecks();
   renderSummary();
   renderLogs();
+  renderUpdateStatus();
   renderControls();
+}
+
+async function loadAppInfo(): Promise<void> {
+  const [info, updateStatus] = await Promise.all([window.bridgeDesk.getAppInfo(), window.bridgeDesk.getUpdateStatus()]);
+  state.appInfo = info;
+  state.updateStatus = updateStatus;
+  elements.appVersion.textContent = `v${info.version}`;
+  renderAll();
 }
 
 async function loadConfig(): Promise<void> {
@@ -236,6 +295,18 @@ async function saveConfigFromForm(): Promise<void> {
 }
 
 elements.refreshChecks.addEventListener("click", () => void refreshChecks());
+elements.checkUpdates.addEventListener("click", async () => {
+  try {
+    state.updateStatus = await window.bridgeDesk.checkForUpdates();
+    renderAll();
+  } catch (error) {
+    setMessage(error instanceof Error ? error.message : String(error));
+  }
+});
+elements.openReleases.addEventListener("click", async () => {
+  const url = state.appInfo?.latestReleaseUrl ?? "https://github.com/stanic-mah/bridgedesk/releases/latest";
+  await window.bridgeDesk.openExternal(url);
+});
 elements.chooseProject.addEventListener("click", async () => {
   try {
     const folder = await window.bridgeDesk.chooseProject();
@@ -311,4 +382,9 @@ window.bridgeDesk.onStateUpdate((nextState) => {
   renderAll();
 });
 
-void loadConfig().then(() => refreshChecks());
+window.bridgeDesk.onUpdateStatus((nextStatus) => {
+  state.updateStatus = nextStatus;
+  renderAll();
+});
+
+void loadAppInfo().then(() => loadConfig()).then(() => refreshChecks());

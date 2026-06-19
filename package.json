@@ -1,6 +1,6 @@
 {
   "name": "bridgedesk",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "description": "Desktop launcher and secure local MCP workspace bridge for ChatGPT and other MCP clients.",
   "type": "module",
   "main": "dist/server.js",
@@ -14,7 +14,8 @@
     "dist",
     "docs",
     "scripts",
-    "README.md"
+    "README.md",
+    "UPDATE_LOG.md"
   ],
   "publishConfig": {
     "access": "public"
@@ -24,9 +25,10 @@
     "build:app": "vite build",
     "build:desktop-assets": "node scripts/copy-desktop-assets.mjs",
     "build": "npm run clean && npm run build:app && tsc -p tsconfig.build.json && npm run build:desktop-assets",
-    "dist:win": "npm run build && electron-builder --win nsis portable --publish never",
+    "dist:win": "npm run build && node scripts/dist-win.mjs",
     "desktop": "npm run build && electron dist/desktop/main.js",
     "dev": "node scripts/dev-server.mjs",
+    "release:check": "node scripts/release-check.mjs",
     "start": "node dist/cli.js serve",
     "test": "tsx src/config.test.ts && tsx src/roots.test.ts && tsx src/skills.test.ts && tsx src/workspaces.test.ts && tsx src/review-checkpoints.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
@@ -48,6 +50,7 @@
     "@pierre/diffs": "^1.2.5",
     "better-sqlite3": "^12.10.0",
     "drizzle-orm": "^0.45.2",
+    "electron-updater": "^6.8.9",
     "express": "^5.2.1",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
@@ -81,28 +84,42 @@
     "directories": {
       "output": "release"
     },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "stanic-mah",
+        "repo": "bridgedesk"
+      }
+    ],
+    "electronUpdaterCompatibility": ">=2.16",
     "files": [
       "dist/**/*",
       "node_modules/**/*",
       "package.json",
       "README.md",
+      "UPDATE_LOG.md",
       "LICENSE"
     ],
     "extraMetadata": {
       "main": "dist/desktop/main.js"
     },
     "win": {
+      "signAndEditExecutable": false,
       "target": [
         "nsis",
         "portable"
       ]
     },
     "nsis": {
+      "artifactName": "BridgeDesk-Setup.${ext}",
       "oneClick": false,
       "perMachine": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true
+    },
+    "portable": {
+      "artifactName": "BridgeDesk-Portable.${ext}"
     }
   }
 }

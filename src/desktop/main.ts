@@ -1,10 +1,24 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync } from "node:fs";
+import { createRequire } from "node:module";
 import { createServer } from "node:net";
 import { homedir } from "node:os";
 import { dirname, parse, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, shell, Tray } from "electron";
+import {
+  app,
+  BrowserWindow,
+  clipboard,
+  dialog,
+  ipcMain,
+  Menu,
+  nativeImage,
+  shell,
+  Tray,
+  type MessageBoxOptions,
+  type MessageBoxReturnValue,
+} from "electron";
+import type { AppUpdater } from "electron-updater";
 import {
   generateOwnerToken,
   loadBridgeDeskFiles,
@@ -28,6 +42,42 @@ interface LauncherState {
   mcpUrl: string | null;
 }
 
+type UpdateState =
+  | "idle"
+  | "disabled"
+  | "checking"
+  | "available"
+  | "downloading"
+  | "downloaded"
+  | "not-available"
+  | "error";
+
+interface AppInfo {
+  version: string;
+  isPackaged: boolean;
+  latestReleaseUrl: string;
+  releasesUrl: string;
+  updateSupported: boolean;
+}
+
+interface UpdateStatus {
+  state: UpdateState;
+  message: string;
+  currentVersion: string;
+  availableVersion: string | null;
+  percent: number | null;
+  error: string | null;
+}
+
+interface UpdateInfoLike {
+  version?: string;
+  releaseName?: string | null;
+}
+
+interface UpdateProgressLike {
+  percent?: number;
+}
+
 interface SaveConfigInput {
   projectRoot: string;
   publicBaseUrl?: string | null;
@@ -36,8 +86,12 @@ interface SaveConfigInput {
 
 const DEFAULT_PORT = 7676;
 const APP_ID = "com.bridgedesk.app";
+const RELEASES_URL = "https://github.com/stanic-mah/bridgedesk/releases";
+const LATEST_RELEASE_URL = `${RELEASES_URL}/latest`;
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const cliPath = resolve(__dirname, "../cli.js");
+const require = createRequire(import.meta.url);
+const { autoUpdater } = require("electron-updater") as { autoUpdater: AppUpdater };
 const isWindows = process.platform === "win32";
 const WINDOWS_BASH_CANDIDATES = [
   "C:\\Program Files\\Git\\bin\\bash.exe",
@@ -57,6 +111,17 @@ let serverProcess: ChildProcess | null = null;
 let currentPublicBaseUrl: string | null = null;
 let currentOwnerToken: string | null = null;
 let isQuitting = false;
+let updaterConfigured = false;
+let updatePromptOpen = false;
+let updateInstallPromptOpen = false;
+let updateStatus: UpdateStatus = {
+  state: app.isPackaged ? "idle" : "disabled",
+  message: app.isPackaged ? "Ready to check for updates." : "Update checks run in the installed app.",
+  currentVersion: app.getVersion(),
+  availableVersion: null,
+  percent: null,
+  error: null,
+};
 
 function createMainWindow(): void {
   mainWindow = new BrowserWindow({
@@ -93,6 +158,7 @@ function showMainWindow(): void {
   mainWindow.show();
   mainWindow.focus();
   sendState();
+  sendUpdateStatus();
 }
 
 function hasActiveSession(): boolean {
@@ -170,6 +236,219 @@ function sendLog(source: "system" | "tunnel" | "server", message: string): void 
       time: new Date().toISOString(),
     });
   }
+}
+
+function sendUpdateStatus(): void {
+  liveMainWindow()?.webContents.send("update:status", updateStatus);
+}
+
+function setUpdateStatus(next: Partial<UpdateStatus>): UpdateStatus {
+  updateStatus = {
+    ...updateStatus,
+    ...next,
+    currentVersion: app.getVersion(),
+  };
+  sendUpdateStatus();
+  return updateStatus;
+}
+
+function getAppInfo(): AppInfo {
+  return {
+    version: app.getVersion(),
+    isPackaged: app.isPackaged,
+    latestReleaseUrl: LATEST_RELEASE_URL,
+    releasesUrl: RELEASES_URL,
+    updateSupported: app.isPackaged && process.platform === "win32",
+  };
+}
+
+function formatError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+async function showMessageBox(options: MessageBoxOptions): Promise<MessageBoxReturnValue> {
+  const window = liveMainWindow();
+  return window ? dialog.showMessageBox(window, options) : dialog.showMessageBox(options);
+}
+
+function configureAutoUpdater(): void {
+  if (updaterConfigured) return;
+  updaterConfigured = true;
+  autoUpdater.autoDownload = false;
+  autoUpdater.autoInstallOnAppQuit = false;
+
+  autoUpdater.on("checking-for-update", () => {
+    setUpdateStatus({
+      state: "checking",
+      message: "Checking for updates...",
+      availableVersion: null,
+      percent: null,
+      error: null,
+    });
+  });
+
+  autoUpdater.on("update-available", (info: UpdateInfoLike) => {
+    const version = info.version ?? "new version";
+    setUpdateStatus({
+      state: "available",
+      message: `BridgeDesk ${version} is available.`,
+      availableVersion: info.version ?? null,
+      percent: null,
+      error: null,
+    });
+    void promptForUpdateDownload(info);
+  });
+
+  autoUpdater.on("update-not-available", () => {
+    setUpdateStatus({
+      state: "not-available",
+      message: `BridgeDesk ${app.getVersion()} is up to date.`,
+      availableVersion: null,
+      percent: null,
+      error: null,
+    });
+  });
+
+  autoUpdater.on("download-progress", (progress: UpdateProgressLike) => {
+    const percent = typeof progress.percent === "number" ? Math.round(progress.percent) : null;
+    setUpdateStatus({
+      state: "downloading",
+      message: percent === null ? "Downloading update..." : `Downloading update... ${percent}%`,
+      percent,
+      error: null,
+    });
+  });
+
+  autoUpdater.on("update-downloaded", (info: UpdateInfoLike) => {
+    const version = info.version ?? updateStatus.availableVersion;
+    setUpdateStatus({
+      state: "downloaded",
+      message: version ? `BridgeDesk ${version} is ready to install.` : "Update is ready to install.",
+      availableVersion: version ?? null,
+      percent: 100,
+      error: null,
+    });
+    void promptForUpdateInstall(info);
+  });
+
+  autoUpdater.on("error", (error: Error) => {
+    const message = formatError(error);
+    setUpdateStatus({
+      state: "error",
+      message: "Update check failed.",
+      error: message,
+      percent: null,
+    });
+    sendLog("system", `Update check failed: ${message}`);
+  });
+}
+
+async function promptForUpdateDownload(info: UpdateInfoLike): Promise<void> {
+  if (updatePromptOpen) return;
+  updatePromptOpen = true;
+  try {
+    const version = info.version ?? "a newer version";
+    const result = await showMessageBox({
+      type: "info",
+      title: "BridgeDesk update available",
+      message: `BridgeDesk ${version} is available.`,
+      detail: `You are using BridgeDesk ${app.getVersion()}. Download the update now?`,
+      buttons: ["Download Update", "Later"],
+      defaultId: 0,
+      cancelId: 1,
+      noLink: true,
+    });
+    if (result.response !== 0) {
+      setUpdateStatus({
+        state: "available",
+        message: `BridgeDesk ${version} is available. Use Check Updates when you are ready.`,
+      });
+      return;
+    }
+    setUpdateStatus({
+      state: "downloading",
+      message: "Downloading update...",
+      percent: 0,
+      error: null,
+    });
+    await autoUpdater.downloadUpdate();
+  } catch (error) {
+    const message = formatError(error);
+    setUpdateStatus({
+      state: "error",
+      message: "Update download failed.",
+      error: message,
+      percent: null,
+    });
+    sendLog("system", `Update download failed: ${message}`);
+  } finally {
+    updatePromptOpen = false;
+  }
+}
+
+async function promptForUpdateInstall(info: UpdateInfoLike): Promise<void> {
+  if (updateInstallPromptOpen) return;
+  updateInstallPromptOpen = true;
+  try {
+    const version = info.version ?? updateStatus.availableVersion ?? "the update";
+    const result = await showMessageBox({
+      type: "info",
+      title: "BridgeDesk update ready",
+      message: `BridgeDesk ${version} is ready to install.`,
+      detail: "BridgeDesk will restart to finish installing the update.",
+      buttons: ["Restart and Install", "Later"],
+      defaultId: 0,
+      cancelId: 1,
+      noLink: true,
+    });
+    if (result.response !== 0) return;
+    isQuitting = true;
+    stopAll();
+    autoUpdater.quitAndInstall(false, true);
+  } finally {
+    updateInstallPromptOpen = false;
+  }
+}
+
+async function checkForUpdates(trigger: "auto" | "manual"): Promise<UpdateStatus> {
+  if (!app.isPackaged) {
+    return setUpdateStatus({
+      state: "disabled",
+      message: "Update checks run in the installed app.",
+      error: null,
+      percent: null,
+    });
+  }
+  if (process.platform !== "win32") {
+    return setUpdateStatus({
+      state: "disabled",
+      message: "Automatic updates are currently available for Windows installer builds.",
+      error: null,
+      percent: null,
+    });
+  }
+  if (updateStatus.state === "checking" || updateStatus.state === "downloading") return updateStatus;
+
+  configureAutoUpdater();
+  try {
+    setUpdateStatus({
+      state: "checking",
+      message: trigger === "manual" ? "Checking for updates..." : "Checking for updates on launch...",
+      error: null,
+      percent: null,
+    });
+    await autoUpdater.checkForUpdates();
+  } catch (error) {
+    const message = formatError(error);
+    setUpdateStatus({
+      state: "error",
+      message: "Update check failed.",
+      error: message,
+      percent: null,
+    });
+    sendLog("system", `Update check failed: ${message}`);
+  }
+  return updateStatus;
 }
 
 function normalizePublicBaseUrl(value: string | null | undefined): string | null {
@@ -496,6 +775,9 @@ function stopAll(): void {
 app.setAppUserModelId(APP_ID);
 
 ipcMain.handle("system:checks", (_event, port: number) => getSystemChecks(port || DEFAULT_PORT));
+ipcMain.handle("app:info", () => getAppInfo());
+ipcMain.handle("update:status", () => updateStatus);
+ipcMain.handle("update:check", () => checkForUpdates("manual"));
 ipcMain.handle("dialog:chooseProject", async () => {
   const result = await dialog.showOpenDialog({
     title: "Choose project folder",
@@ -528,6 +810,7 @@ if (!app.requestSingleInstanceLock()) {
   app.whenReady().then(() => {
     createMainWindow();
     createTray();
+    void checkForUpdates("auto");
     app.on("activate", () => {
       showMainWindow();
     });
