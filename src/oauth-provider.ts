@@ -4,10 +4,12 @@ import type { OAuthRegisteredClientsStore } from "@modelcontextprotocol/sdk/serv
 import type { OAuthServerProvider, AuthorizationParams } from "@modelcontextprotocol/sdk/server/auth/provider.js";
 import { AccessDeniedError, InvalidGrantError, InvalidRequestError, InvalidTokenError } from "@modelcontextprotocol/sdk/server/auth/errors.js";
 import type { AuthInfo } from "@modelcontextprotocol/sdk/server/auth/types.js";
-import type {
-  OAuthClientInformationFull,
-  OAuthTokenRevocationRequest,
-  OAuthTokens,
+import {
+  OAuthClientMetadataSchema,
+  type OAuthClientMetadata,
+  type OAuthClientInformationFull,
+  type OAuthTokenRevocationRequest,
+  type OAuthTokens,
 } from "@modelcontextprotocol/sdk/shared/auth.js";
 import { checkResourceAllowed, resourceUrlFromServerUrl } from "@modelcontextprotocol/sdk/shared/auth-utils.js";
 
@@ -42,6 +44,9 @@ interface RefreshTokenRecord {
 }
 
 const CODE_TTL_MS = 5 * 60 * 1000;
+const CLIENT_METADATA_TIMEOUT_MS = 5000;
+
+type FetchClientMetadata = typeof fetch;
 
 function randomToken(): string {
   return randomBytes(32).toString("base64url");
@@ -151,13 +156,45 @@ function redirectHostAllowed(redirectUri: string, allowedHosts: string[]): boole
   });
 }
 
+function clientMetadataDocumentAllowed(clientId: string, allowedHosts: string[]): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(clientId);
+  } catch {
+    return false;
+  }
+
+  return parsed.protocol === "https:" && redirectHostAllowed(clientId, allowedHosts);
+}
+
+function normalizeClientMetadata(
+  clientId: string,
+  metadata: OAuthClientMetadata,
+): OAuthClientInformationFull | undefined {
+  if ((metadata.token_endpoint_auth_method ?? "none") !== "none") return undefined;
+
+  return {
+    ...metadata,
+    client_id: clientId,
+    token_endpoint_auth_method: "none",
+    grant_types: metadata.grant_types ?? ["authorization_code", "refresh_token"],
+    response_types: metadata.response_types ?? ["code"],
+  };
+}
+
 export class InMemoryOAuthClientsStore implements OAuthRegisteredClientsStore {
   private readonly clients = new Map<string, OAuthClientInformationFull>();
 
-  constructor(private readonly allowedRedirectHosts: string[]) {}
+  constructor(
+    private readonly allowedRedirectHosts: string[],
+    private readonly fetchClientMetadata: FetchClientMetadata = fetch,
+  ) {}
 
-  getClient(clientId: string): OAuthClientInformationFull | undefined {
-    return this.clients.get(clientId);
+  getClient(clientId: string): OAuthClientInformationFull | undefined | Promise<OAuthClientInformationFull | undefined> {
+    const registered = this.clients.get(clientId);
+    if (registered) return registered;
+    if (!clientMetadataDocumentAllowed(clientId, this.allowedRedirectHosts)) return undefined;
+    return this.getClientFromMetadataDocument(clientId);
   }
 
   registerClient(
@@ -178,6 +215,32 @@ export class InMemoryOAuthClientsStore implements OAuthRegisteredClientsStore {
     };
     this.clients.set(registered.client_id, registered);
     return registered;
+  }
+
+  private async getClientFromMetadataDocument(clientId: string): Promise<OAuthClientInformationFull | undefined> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), CLIENT_METADATA_TIMEOUT_MS);
+    try {
+      const response = await this.fetchClientMetadata(clientId, {
+        headers: { "User-Agent": "BridgeDesk" },
+        signal: controller.signal,
+      });
+      if (!response.ok) return undefined;
+      const result = OAuthClientMetadataSchema.safeParse(await response.json());
+      if (!result.success) return undefined;
+      if (!result.data.redirect_uris.every((uri) => redirectHostAllowed(uri, this.allowedRedirectHosts))) {
+        return undefined;
+      }
+
+      const client = normalizeClientMetadata(clientId, result.data);
+      if (!client) return undefined;
+      this.clients.set(client.client_id, client);
+      return client;
+    } catch {
+      return undefined;
+    } finally {
+      clearTimeout(timer);
+    }
   }
 }
 

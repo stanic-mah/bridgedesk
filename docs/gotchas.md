@@ -102,10 +102,13 @@ BRIDGEDESK_ALLOWED_HOSTS="*" npx bridgedesk serve
 
 ## OAuth Redirect Host Rejected
 
-By default, BridgeDesk allows redirects for:
+BridgeDesk supports ChatGPT's Client ID Metadata Document flow and dynamic
+client registration. By default, BridgeDesk allows redirects for:
 
 ```text
 chatgpt.com
+*.chatgpt.com
+*.openai.com
 localhost
 127.0.0.1
 ```

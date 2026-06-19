@@ -445,6 +445,7 @@ function authorizationServerMetadata(config: ServerConfig): Record<string, unkno
     token_endpoint_auth_methods_supported: ["client_secret_post", "none"],
     grant_types_supported: ["authorization_code", "refresh_token"],
     scopes_supported: config.oauth.scopes,
+    client_id_metadata_document_supported: true,
     revocation_endpoint: `${baseUrl}/revoke`,
     revocation_endpoint_auth_methods_supported: ["client_secret_post"],
     registration_endpoint: `${baseUrl}/register`,
@@ -1320,6 +1321,16 @@ export function createServer(config = loadConfig()): RunningServer {
     app.set("trust proxy", true);
   }
 
+  app.get("/.well-known/oauth-authorization-server", (_req, res) => {
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.json(authorizationServerMetadata(config));
+  });
+
+  app.get("/.well-known/openid-configuration", (_req, res) => {
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.json(authorizationServerMetadata(config));
+  });
+
   app.use((req, res, next) => {
     const requestId = randomUUID();
     const startedAt = performance.now();
@@ -1357,11 +1368,6 @@ export function createServer(config = loadConfig()): RunningServer {
   app.get("/.well-known/oauth-protected-resource", (_req, res) => {
     res.setHeader("Access-Control-Allow-Origin", "*");
     res.json(protectedResourceMetadata(config, mcpUrl));
-  });
-
-  app.get("/.well-known/openid-configuration", (_req, res) => {
-    res.setHeader("Access-Control-Allow-Origin", "*");
-    res.json(authorizationServerMetadata(config));
   });
 
   app.options("/mcp-app-assets/{*asset}", (_req, res) => {

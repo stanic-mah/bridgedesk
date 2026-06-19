@@ -1,5 +1,10 @@
 # BridgeDesk Update Log
 
+## 1.2.3
+
+- Added ChatGPT Client ID Metadata Document support so connector setup can use ChatGPT's stable OAuth client metadata path instead of relying only on dynamic client registration.
+- Advertised `client_id_metadata_document_supported` in OAuth metadata while keeping dynamic client registration available for clients that still use it.
+
 ## 1.2.2
 
 - Fixed Permanent Tunnel URL handling so pasting an MCP URL such as `https://mcp.example.com/mcp` is saved as the fixed host and displayed as a single `/mcp` endpoint.
