@@ -95,6 +95,7 @@ type ToolWidgetKind =
   | "show_changes";
 
 interface ToolDefinitionMeta extends Record<string, unknown> {
+  securitySchemes: Array<{ type: "oauth2"; scopes: string[] }>;
   ui: {
     resourceUri: string;
     visibility: ["model"];
@@ -102,10 +103,12 @@ interface ToolDefinitionMeta extends Record<string, unknown> {
 }
 
 type EmptyToolDefinitionMeta = Record<string, unknown> & {
+  securitySchemes: Array<{ type: "oauth2"; scopes: string[] }>;
   "ui/resourceUri"?: string;
 };
 
 interface ToolWidgetDescriptorMeta {
+  securitySchemes: Array<{ type: "oauth2"; scopes: string[] }>;
   _meta: ToolDefinitionMeta | EmptyToolDefinitionMeta;
 }
 
@@ -124,10 +127,20 @@ function toolWidgetDescriptorMeta(
   config: ServerConfig,
   kind: ToolWidgetKind,
 ): ToolWidgetDescriptorMeta {
-  if (!shouldAttachWidget(config.widgets, kind)) return { _meta: {} };
+  const securitySchemes = [{ type: "oauth2" as const, scopes: [config.oauth.scopes[0] ?? "bridgedesk"] }];
+  if (!shouldAttachWidget(config.widgets, kind)) {
+    return {
+      securitySchemes,
+      _meta: {
+        securitySchemes,
+      },
+    };
+  }
 
   return {
+    securitySchemes,
     _meta: {
+      securitySchemes,
       ui: {
         resourceUri: WORKSPACE_APP_URI,
         visibility: ["model"],
@@ -442,12 +455,12 @@ function authorizationServerMetadata(config: ServerConfig): Record<string, unkno
     response_types_supported: ["code"],
     code_challenge_methods_supported: ["S256"],
     token_endpoint: `${baseUrl}/token`,
-    token_endpoint_auth_methods_supported: ["client_secret_post", "none"],
+    token_endpoint_auth_methods_supported: ["none"],
     grant_types_supported: ["authorization_code", "refresh_token"],
     scopes_supported: config.oauth.scopes,
     client_id_metadata_document_supported: true,
     revocation_endpoint: `${baseUrl}/revoke`,
-    revocation_endpoint_auth_methods_supported: ["client_secret_post"],
+    revocation_endpoint_auth_methods_supported: ["none"],
     registration_endpoint: `${baseUrl}/register`,
   };
 }

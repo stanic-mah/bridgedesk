@@ -1,5 +1,10 @@
 # BridgeDesk Update Log
 
+## 1.2.6
+
+- Added OAuth `securitySchemes` to BridgeDesk tool descriptors so ChatGPT can import the tool list after OAuth approval.
+- Updated OAuth metadata to advertise public-client token auth with `none`, matching ChatGPT's Client ID Metadata Document flow.
+
 ## 1.2.5
 
 - Increased the ChatGPT client metadata fetch timeout so slower ChatGPT metadata URLs do not fail as `invalid_client`.
