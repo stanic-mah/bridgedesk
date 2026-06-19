@@ -1,5 +1,10 @@
 # BridgeDesk Update Log
 
+## 1.2.7
+
+- Added a ChatGPT compatibility fix so BridgeDesk advertises OAuth security schemes at the top level of each MCP tool as well as in tool metadata.
+- Improved the MCP tool list response used after owner-password approval, so ChatGPT can discover BridgeDesk actions after connecting.
+
 ## 1.2.6
 
 - Added OAuth `securitySchemes` to BridgeDesk tool descriptors so ChatGPT can import the tool list after OAuth approval.

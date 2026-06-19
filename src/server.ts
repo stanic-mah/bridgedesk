@@ -7,7 +7,9 @@ import { createMcpExpressApp } from "@modelcontextprotocol/sdk/server/express.js
 import { mcpAuthRouter, getOAuthProtectedResourceMetadataUrl } from "@modelcontextprotocol/sdk/server/auth/router.js";
 import { requireBearerAuth } from "@modelcontextprotocol/sdk/server/auth/middleware/bearerAuth.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
+import { normalizeObjectSchema } from "@modelcontextprotocol/sdk/server/zod-compat.js";
+import { toJsonSchemaCompat } from "@modelcontextprotocol/sdk/server/zod-json-schema-compat.js";
+import { isInitializeRequest, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { checkResourceAllowed, resourceUrlFromServerUrl } from "@modelcontextprotocol/sdk/shared/auth-utils.js";
 import {
   registerAppResource,
@@ -84,6 +86,8 @@ interface DiffStats {
   removals: number;
 }
 
+type OAuthSecurityScheme = { type: "oauth2"; scopes: string[] };
+
 type ToolWidgetKind =
   | "workspace"
   | "read"
@@ -95,7 +99,7 @@ type ToolWidgetKind =
   | "show_changes";
 
 interface ToolDefinitionMeta extends Record<string, unknown> {
-  securitySchemes: Array<{ type: "oauth2"; scopes: string[] }>;
+  securitySchemes: OAuthSecurityScheme[];
   ui: {
     resourceUri: string;
     visibility: ["model"];
@@ -103,12 +107,12 @@ interface ToolDefinitionMeta extends Record<string, unknown> {
 }
 
 type EmptyToolDefinitionMeta = Record<string, unknown> & {
-  securitySchemes: Array<{ type: "oauth2"; scopes: string[] }>;
+  securitySchemes: OAuthSecurityScheme[];
   "ui/resourceUri"?: string;
 };
 
 interface ToolWidgetDescriptorMeta {
-  securitySchemes: Array<{ type: "oauth2"; scopes: string[] }>;
+  securitySchemes: OAuthSecurityScheme[];
   _meta: ToolDefinitionMeta | EmptyToolDefinitionMeta;
 }
 
@@ -123,11 +127,15 @@ function shouldAttachWidget(mode: WidgetMode, kind: ToolWidgetKind): boolean {
   }
 }
 
+function toolSecuritySchemes(config: ServerConfig): OAuthSecurityScheme[] {
+  return [{ type: "oauth2", scopes: [config.oauth.scopes[0] ?? "bridgedesk"] }];
+}
+
 function toolWidgetDescriptorMeta(
   config: ServerConfig,
   kind: ToolWidgetKind,
 ): ToolWidgetDescriptorMeta {
-  const securitySchemes = [{ type: "oauth2" as const, scopes: [config.oauth.scopes[0] ?? "bridgedesk"] }];
+  const securitySchemes = toolSecuritySchemes(config);
   if (!shouldAttachWidget(config.widgets, kind)) {
     return {
       securitySchemes,
@@ -440,6 +448,71 @@ function appCsp(config: ServerConfig): {
     resourceDomains: [publicBaseUrl],
     connectDomains: [publicBaseUrl],
   };
+}
+
+type JsonSchemaObject = Record<string, unknown>;
+
+interface RegisteredToolForList {
+  title?: string;
+  description?: string;
+  inputSchema?: Parameters<typeof normalizeObjectSchema>[0];
+  outputSchema?: Parameters<typeof normalizeObjectSchema>[0];
+  annotations?: unknown;
+  execution?: unknown;
+  _meta?: Record<string, unknown>;
+  enabled?: boolean;
+}
+
+interface McpServerToolListAccess {
+  server: McpServer["server"];
+  _registeredTools: Record<string, RegisteredToolForList>;
+}
+
+function objectJsonSchema(
+  schema: Parameters<typeof normalizeObjectSchema>[0],
+  pipeStrategy: "input" | "output",
+): JsonSchemaObject | undefined {
+  const objectSchema = normalizeObjectSchema(schema);
+  if (!objectSchema) return undefined;
+  return toJsonSchemaCompat(objectSchema, {
+    strictUnions: true,
+    pipeStrategy,
+  });
+}
+
+function installToolListSecurityCompatibility(
+  server: McpServer,
+  config: ServerConfig,
+): void {
+  const mcpServer = server as unknown as McpServerToolListAccess;
+  const securitySchemes = toolSecuritySchemes(config);
+
+  mcpServer.server.setRequestHandler(ListToolsRequestSchema, async () => ({
+    tools: Object.entries(mcpServer._registeredTools)
+      .filter(([, tool]) => tool.enabled !== false)
+      .map(([name, tool]) => {
+        const inputSchema = objectJsonSchema(tool.inputSchema, "input") ?? {
+          type: "object",
+          properties: {},
+        };
+        const toolDefinition: Record<string, unknown> = {
+          name,
+          title: tool.title,
+          description: tool.description,
+          inputSchema,
+          securitySchemes,
+          _meta: {
+            ...(tool._meta ?? {}),
+            securitySchemes,
+          },
+        };
+        const outputSchema = objectJsonSchema(tool.outputSchema, "output");
+        if (outputSchema) toolDefinition.outputSchema = outputSchema;
+        if (tool.annotations) toolDefinition.annotations = tool.annotations;
+        if (tool.execution) toolDefinition.execution = tool.execution;
+        return toolDefinition;
+      }),
+  }));
 }
 
 function issuerUrl(config: ServerConfig): string {
@@ -1305,6 +1378,8 @@ function createMcpServer(
       };
     },
   );
+
+  installToolListSecurityCompatibility(server, config);
 
   return server;
 }
