@@ -4,7 +4,7 @@ import { createServer } from "node:net";
 import { homedir } from "node:os";
 import { dirname, parse, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { app, BrowserWindow, clipboard, dialog, ipcMain, shell } from "electron";
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, shell, Tray } from "electron";
 import {
   generateOwnerToken,
   loadBridgeDeskFiles,
@@ -47,12 +47,16 @@ const WINDOWS_CLOUDFLARED_CANDIDATES = [
   "C:\\Program Files\\cloudflared\\cloudflared.exe",
   "C:\\Program Files (x86)\\cloudflared\\cloudflared.exe",
 ];
+const TRAY_ICON_DATA_URL =
+  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAUElEQVR4nGOQjw34P5CYYdQBow4YdcCoA7AJ4gK4DCFV/dBxAK3ERx0wdBxAbKIavg4Y8CgYdcCAOwAdEEqExKof/A6gJx51wKgDRh0w6gAA2gFNvcCqitUAAAAASUVORK5CYII=";
 
 let mainWindow: BrowserWindow | null = null;
+let tray: Tray | null = null;
 let tunnelProcess: ChildProcess | null = null;
 let serverProcess: ChildProcess | null = null;
 let currentPublicBaseUrl: string | null = null;
 let currentOwnerToken: string | null = null;
+let isQuitting = false;
 
 function createMainWindow(): void {
   mainWindow = new BrowserWindow({
@@ -71,6 +75,60 @@ function createMainWindow(): void {
   });
 
   mainWindow.loadFile(resolve(__dirname, "index.html"));
+  mainWindow.on("close", (event) => {
+    if (isQuitting || !hasActiveSession()) return;
+    event.preventDefault();
+    mainWindow?.hide();
+    sendLog("system", "BridgeDesk is still running in the system tray. Use Stop All or Quit BridgeDesk to end the session.");
+  });
+  mainWindow.on("closed", () => {
+    mainWindow = null;
+  });
+}
+
+function showMainWindow(): void {
+  if (!mainWindow || mainWindow.isDestroyed()) createMainWindow();
+  if (!mainWindow) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+  sendState();
+}
+
+function hasActiveSession(): boolean {
+  return Boolean(tunnelProcess || serverProcess);
+}
+
+function createTray(): void {
+  if (tray) return;
+  const icon = nativeImage.createFromDataURL(TRAY_ICON_DATA_URL);
+  tray = new Tray(icon);
+  tray.on("click", () => showMainWindow());
+  updateTrayMenu();
+}
+
+function updateTrayMenu(): void {
+  if (!tray) return;
+  const serverStatus = serverProcess ? "Server running" : "Server stopped";
+  const tunnelStatus = tunnelProcess ? "Tunnel running" : "Tunnel stopped";
+  tray.setToolTip(`BridgeDesk - ${tunnelStatus}, ${serverStatus}`);
+  tray.setContextMenu(
+    Menu.buildFromTemplate([
+      { label: "Show BridgeDesk", click: () => showMainWindow() },
+      { label: `${tunnelStatus} / ${serverStatus}`, enabled: false },
+      { type: "separator" },
+      { label: "Stop Server", enabled: Boolean(serverProcess), click: () => stopServer() },
+      { label: "Stop All", enabled: hasActiveSession(), click: () => stopAll() },
+      { type: "separator" },
+      { label: "Quit BridgeDesk", click: () => quitApp() },
+    ]),
+  );
+}
+
+function quitApp(): void {
+  isQuitting = true;
+  stopAll();
+  app.quit();
 }
 
 function sendState(): void {
@@ -82,6 +140,7 @@ function sendState(): void {
     mcpUrl,
   };
   mainWindow?.webContents.send("state:update", state);
+  updateTrayMenu();
 }
 
 function redact(text: string): string {
@@ -454,17 +513,27 @@ ipcMain.handle("clipboard:write", (_event, text: string) => {
 });
 ipcMain.handle("external:open", (_event, url: string) => shell.openExternal(url));
 
-app.whenReady().then(() => {
-  createMainWindow();
-  app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) createMainWindow();
+if (!app.requestSingleInstanceLock()) {
+  app.quit();
+} else {
+  app.on("second-instance", () => {
+    showMainWindow();
   });
-});
+
+  app.whenReady().then(() => {
+    createMainWindow();
+    createTray();
+    app.on("activate", () => {
+      showMainWindow();
+    });
+  });
+}
 
 app.on("before-quit", () => {
+  isQuitting = true;
   stopAll();
 });
 
 app.on("window-all-closed", () => {
-  if (process.platform !== "darwin") app.quit();
+  if (!hasActiveSession() && process.platform !== "darwin") app.quit();
 });
