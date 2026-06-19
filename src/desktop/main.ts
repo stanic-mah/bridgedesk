@@ -27,6 +27,8 @@ import {
 } from "../user-config.js";
 
 type CheckStatus = "ok" | "missing" | "busy" | "error";
+type TunnelMode = "quick" | "permanent";
+type LogSource = "system" | "tunnel" | "server";
 
 interface SystemCheck {
   id: string;
@@ -40,6 +42,7 @@ interface LauncherState {
   serverRunning: boolean;
   publicBaseUrl: string | null;
   mcpUrl: string | null;
+  tunnelMode: TunnelMode;
 }
 
 type UpdateState =
@@ -82,9 +85,28 @@ interface SaveConfigInput {
   projectRoot: string;
   publicBaseUrl?: string | null;
   port: number;
+  tunnelMode?: TunnelMode;
+  permanentTunnelName?: string | null;
+  permanentHostname?: string | null;
+}
+
+interface StartTunnelInput {
+  projectRoot: string | null;
+  publicBaseUrl?: string | null;
+  port: number;
+  tunnelMode?: TunnelMode;
+  permanentTunnelName?: string | null;
+  permanentHostname?: string | null;
+}
+
+interface CloudflareTunnelInput {
+  tunnelName?: string | null;
+  hostname?: string | null;
 }
 
 const DEFAULT_PORT = 7676;
+const DEFAULT_TUNNEL_MODE: TunnelMode = "quick";
+const DEFAULT_PERMANENT_TUNNEL_NAME = "bridgedesk";
 const APP_ID = "com.bridgedesk.app";
 const RELEASES_URL = "https://github.com/stanic-mah/bridgedesk/releases";
 const LATEST_RELEASE_URL = `${RELEASES_URL}/latest`;
@@ -108,8 +130,10 @@ let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let tunnelProcess: ChildProcess | null = null;
 let serverProcess: ChildProcess | null = null;
+let cloudflaredSetupProcess: ChildProcess | null = null;
 let currentPublicBaseUrl: string | null = null;
 let currentOwnerToken: string | null = null;
+let currentTunnelMode: TunnelMode = DEFAULT_TUNNEL_MODE;
 let isQuitting = false;
 let updaterConfigured = false;
 let updatePromptOpen = false;
@@ -209,6 +233,7 @@ function sendState(): void {
     serverRunning: Boolean(serverProcess),
     publicBaseUrl: currentPublicBaseUrl,
     mcpUrl,
+    tunnelMode: currentTunnelMode,
   };
   liveMainWindow()?.webContents.send("state:update", state);
   updateTrayMenu();
@@ -221,10 +246,13 @@ function redact(text: string): string {
   }
   output = output.replace(/(BRIDGEDESK_OAUTH_OWNER_TOKEN=)[^\s]+/g, "$1[redacted]");
   output = output.replace(/(Owner password:\s*)[A-Za-z0-9_-]{16,}/g, "$1[redacted]");
+  output = output.replace(/([?&](?:token|key|secret|credentials|credentials-contents)=)[^\s&]+/gi, "$1[redacted]");
+  output = output.replace(/(--(?:token|credentials-contents)\s+)\S+/gi, "$1[redacted]");
+  output = output.replace(/\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g, "[redacted-token]");
   return output;
 }
 
-function sendLog(source: "system" | "tunnel" | "server", message: string): void {
+function sendLog(source: LogSource, message: string): void {
   const lines = redact(message)
     .split(/\r?\n/)
     .map((line) => line.trimEnd())
@@ -461,6 +489,37 @@ function normalizePublicBaseUrl(value: string | null | undefined): string | null
   return parsed.toString().replace(/\/$/, "");
 }
 
+function normalizeUrlInput(value: string | null | undefined): string | null {
+  const trimmed = value?.trim();
+  if (!trimmed) return null;
+  return /^[a-zA-Z][a-zA-Z\d+\-.]*:\/\//.test(trimmed) ? trimmed : `https://${trimmed}`;
+}
+
+function normalizePermanentHostname(value: string | null | undefined): string | null {
+  const normalized = normalizePublicBaseUrl(normalizeUrlInput(value));
+  if (!normalized) return null;
+  const parsed = new URL(normalized);
+  if (parsed.protocol !== "https:") {
+    throw new Error("Permanent Tunnel URL must start with https://.");
+  }
+  if (parsed.hostname.endsWith(".trycloudflare.com")) {
+    throw new Error("Permanent Tunnel mode needs your fixed Cloudflare hostname, not a Quick Tunnel URL.");
+  }
+  return normalized;
+}
+
+function normalizeTunnelMode(value: unknown): TunnelMode {
+  return value === "permanent" ? "permanent" : "quick";
+}
+
+function normalizeTunnelName(value: string | null | undefined): string {
+  const trimmed = value?.trim() || DEFAULT_PERMANENT_TUNNEL_NAME;
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$/.test(trimmed)) {
+    throw new Error("Cloudflare tunnel name can use letters, numbers, dashes, underscores, and dots.");
+  }
+  return trimmed;
+}
+
 function validateProjectRoot(projectRoot: string): string {
   const resolved = resolve(projectRoot);
   const root = parse(resolved).root;
@@ -628,6 +687,8 @@ function getConfigSummary(): {
 } {
   const files = loadBridgeDeskFiles();
   currentOwnerToken = files.auth.ownerToken ?? null;
+  currentTunnelMode = normalizeTunnelMode(files.config.tunnelMode);
+  currentPublicBaseUrl = files.config.publicBaseUrl ?? files.config.permanentHostname ?? null;
   return {
     configDir: files.dir,
     configPath: files.configPath,
@@ -642,7 +703,14 @@ function getConfigSummary(): {
 function saveConfig(input: SaveConfigInput): ReturnType<typeof getConfigSummary> {
   const projectRoot = validateProjectRoot(input.projectRoot);
   const files = loadBridgeDeskFiles();
-  const publicBaseUrl = normalizePublicBaseUrl(input.publicBaseUrl);
+  const tunnelMode = normalizeTunnelMode(input.tunnelMode ?? files.config.tunnelMode);
+  const permanentTunnelName = normalizeTunnelName(input.permanentTunnelName ?? files.config.permanentTunnelName);
+  const permanentHostname =
+    input.permanentHostname === undefined
+      ? normalizePermanentHostname(files.config.permanentHostname)
+      : normalizePermanentHostname(input.permanentHostname);
+  const publicBaseUrl =
+    tunnelMode === "permanent" ? permanentHostname : normalizePublicBaseUrl(input.publicBaseUrl);
 
   writeBridgeDeskConfig({
     ...files.config,
@@ -650,6 +718,9 @@ function saveConfig(input: SaveConfigInput): ReturnType<typeof getConfigSummary>
     port: input.port || DEFAULT_PORT,
     allowedRoots: [projectRoot],
     publicBaseUrl,
+    tunnelMode,
+    permanentTunnelName,
+    permanentHostname,
   });
 
   writeBridgeDeskAuth({
@@ -657,18 +728,20 @@ function saveConfig(input: SaveConfigInput): ReturnType<typeof getConfigSummary>
   });
 
   currentPublicBaseUrl = publicBaseUrl;
+  currentTunnelMode = tunnelMode;
   const summary = getConfigSummary();
   sendState();
   return summary;
 }
 
 function captureTunnelUrl(text: string, projectRoot: string | null, port: number): void {
+  if (currentTunnelMode !== "quick") return;
   const match = text.match(/https:\/\/[a-zA-Z0-9-]+\.trycloudflare\.com/);
   if (!match) return;
   currentPublicBaseUrl = match[0];
   if (projectRoot) {
     try {
-      saveConfig({ projectRoot, publicBaseUrl: currentPublicBaseUrl, port });
+      saveConfig({ projectRoot, publicBaseUrl: currentPublicBaseUrl, port, tunnelMode: "quick" });
     } catch (error) {
       sendLog("system", error instanceof Error ? error.message : String(error));
     }
@@ -676,9 +749,11 @@ function captureTunnelUrl(text: string, projectRoot: string | null, port: number
   sendState();
 }
 
-function startTunnel(projectRoot: string | null, port: number): void {
+function startQuickTunnel(input: StartTunnelInput): void {
   if (tunnelProcess) return;
+  currentTunnelMode = "quick";
   const cloudflared = getCloudflaredCommand();
+  const port = input.port || DEFAULT_PORT;
   const child = spawn(cloudflared, ["tunnel", "--url", `http://127.0.0.1:${port}`], {
     shell: isWindowsAbsolutePath(cloudflared) ? false : commandShellOption(),
     windowsHide: true,
@@ -692,12 +767,12 @@ function startTunnel(projectRoot: string | null, port: number): void {
   child.stdout?.on("data", (chunk: Buffer) => {
     const text = chunk.toString();
     sendLog("tunnel", text);
-    captureTunnelUrl(text, projectRoot, port);
+    captureTunnelUrl(text, input.projectRoot, port);
   });
   child.stderr?.on("data", (chunk: Buffer) => {
     const text = chunk.toString();
     sendLog("tunnel", text);
-    captureTunnelUrl(text, projectRoot, port);
+    captureTunnelUrl(text, input.projectRoot, port);
   });
   child.on("error", (error) => {
     sendLog("tunnel", error.message);
@@ -709,14 +784,89 @@ function startTunnel(projectRoot: string | null, port: number): void {
   });
 }
 
+function startPermanentTunnel(input: StartTunnelInput): void {
+  if (tunnelProcess) return;
+  const permanentHostname = normalizePermanentHostname(input.permanentHostname ?? input.publicBaseUrl);
+  if (!permanentHostname) {
+    throw new Error("Enter a fixed HTTPS hostname before starting a Permanent Tunnel.");
+  }
+  const tunnelName = normalizeTunnelName(input.permanentTunnelName);
+  const port = input.port || DEFAULT_PORT;
+  const cloudflared = getCloudflaredCommand();
+  const child = spawn(cloudflared, ["tunnel", "run", "--url", `http://127.0.0.1:${port}`, tunnelName], {
+    shell: isWindowsAbsolutePath(cloudflared) ? false : commandShellOption(),
+    windowsHide: true,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  tunnelProcess = child;
+  currentTunnelMode = "permanent";
+  currentPublicBaseUrl = permanentHostname;
+
+  if (input.projectRoot) {
+    try {
+      saveConfig({
+        projectRoot: input.projectRoot,
+        publicBaseUrl: permanentHostname,
+        permanentHostname,
+        permanentTunnelName: tunnelName,
+        tunnelMode: "permanent",
+        port,
+      });
+    } catch (error) {
+      sendLog("system", error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  sendLog("tunnel", `Starting permanent Cloudflare tunnel ${tunnelName} for http://127.0.0.1:${port}`);
+  sendState();
+
+  child.stdout?.on("data", (chunk: Buffer) => sendLog("tunnel", chunk.toString()));
+  child.stderr?.on("data", (chunk: Buffer) => sendLog("tunnel", chunk.toString()));
+  child.on("error", (error) => {
+    sendLog("tunnel", error.message);
+  });
+  child.on("close", (code) => {
+    sendLog("tunnel", `Tunnel stopped with code ${code ?? "unknown"}`);
+    tunnelProcess = null;
+    sendState();
+  });
+}
+
+function startTunnel(input: StartTunnelInput): void {
+  const tunnelMode = normalizeTunnelMode(input.tunnelMode);
+  if (tunnelMode === "permanent") {
+    startPermanentTunnel(input);
+    return;
+  }
+  startQuickTunnel(input);
+}
+
 function startServer(input: SaveConfigInput): void {
   if (serverProcess) return;
   const projectRoot = validateProjectRoot(input.projectRoot);
-  const publicBaseUrl = normalizePublicBaseUrl(input.publicBaseUrl);
+  const tunnelMode = normalizeTunnelMode(input.tunnelMode);
+  const permanentTunnelName = normalizeTunnelName(input.permanentTunnelName);
+  const permanentHostname =
+    tunnelMode === "permanent"
+      ? normalizePermanentHostname(input.permanentHostname ?? input.publicBaseUrl)
+      : normalizePermanentHostname(input.permanentHostname);
+  const publicBaseUrl =
+    tunnelMode === "permanent" ? permanentHostname : normalizePublicBaseUrl(input.publicBaseUrl);
   if (!publicBaseUrl) {
-    throw new Error("A public tunnel URL is required before starting BridgeDesk.");
+    throw new Error(
+      tunnelMode === "permanent"
+        ? "Enter a fixed HTTPS hostname before starting BridgeDesk."
+        : "A public tunnel URL is required before starting BridgeDesk.",
+    );
   }
-  saveConfig({ projectRoot, publicBaseUrl, port: input.port });
+  saveConfig({
+    projectRoot,
+    publicBaseUrl,
+    permanentHostname,
+    permanentTunnelName,
+    tunnelMode,
+    port: input.port,
+  });
 
   const child = spawn("node", [cliPath, "serve"], {
     shell: commandShellOption(),
@@ -745,6 +895,71 @@ function startServer(input: SaveConfigInput): void {
   });
 }
 
+function runCloudflaredTask(label: string, args: string[], timeoutMs = 120000): Promise<void> {
+  if (cloudflaredSetupProcess) {
+    throw new Error("A Cloudflare setup step is already running.");
+  }
+  const cloudflared = getCloudflaredCommand();
+  sendLog("tunnel", `${label}: cloudflared ${args.join(" ")}`);
+
+  return new Promise((resolveTask, rejectTask) => {
+    const child = spawn(cloudflared, args, {
+      shell: isWindowsAbsolutePath(cloudflared) ? false : commandShellOption(),
+      windowsHide: true,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    cloudflaredSetupProcess = child;
+    let settled = false;
+
+    const finish = (error?: Error): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      cloudflaredSetupProcess = null;
+      if (error) {
+        rejectTask(error);
+        return;
+      }
+      resolveTask();
+    };
+
+    const timer = setTimeout(() => {
+      stopProcess(child);
+      finish(new Error(`${label} timed out.`));
+    }, timeoutMs);
+
+    child.stdout?.on("data", (chunk: Buffer) => sendLog("tunnel", chunk.toString()));
+    child.stderr?.on("data", (chunk: Buffer) => sendLog("tunnel", chunk.toString()));
+    child.on("error", (error) => finish(error));
+    child.on("close", (code) => {
+      if (code === 0) {
+        sendLog("tunnel", `${label} completed.`);
+        finish();
+        return;
+      }
+      finish(new Error(`${label} failed with code ${code ?? "unknown"}.`));
+    });
+  });
+}
+
+function cloudflareLogin(): Promise<void> {
+  return runCloudflaredTask("Cloudflare login", ["tunnel", "login"], 300000);
+}
+
+function createNamedTunnel(input: CloudflareTunnelInput): Promise<void> {
+  const tunnelName = normalizeTunnelName(input.tunnelName);
+  return runCloudflaredTask("Create named tunnel", ["tunnel", "create", tunnelName]);
+}
+
+function routeTunnelDns(input: CloudflareTunnelInput): Promise<void> {
+  const tunnelName = normalizeTunnelName(input.tunnelName);
+  const permanentHostname = normalizePermanentHostname(input.hostname);
+  if (!permanentHostname) {
+    throw new Error("Enter a fixed HTTPS hostname before routing DNS.");
+  }
+  return runCloudflaredTask("Route DNS", ["tunnel", "route", "dns", tunnelName, new URL(permanentHostname).hostname]);
+}
+
 function stopProcess(child: ChildProcess | null): void {
   if (!child) return;
   if (isWindows && child.pid) {
@@ -767,8 +982,10 @@ function stopServer(): void {
 function stopAll(): void {
   stopProcess(serverProcess);
   stopProcess(tunnelProcess);
+  stopProcess(cloudflaredSetupProcess);
   serverProcess = null;
   tunnelProcess = null;
+  cloudflaredSetupProcess = null;
   sendState();
 }
 
@@ -789,9 +1006,12 @@ ipcMain.handle("dialog:chooseProject", async () => {
 });
 ipcMain.handle("config:get", () => getConfigSummary());
 ipcMain.handle("config:save", (_event, input: SaveConfigInput) => saveConfig(input));
-ipcMain.handle("tunnel:start", (_event, input: { projectRoot: string | null; port: number }) => {
-  startTunnel(input.projectRoot, input.port || DEFAULT_PORT);
+ipcMain.handle("tunnel:start", (_event, input: StartTunnelInput) => {
+  startTunnel({ ...input, port: input.port || DEFAULT_PORT });
 });
+ipcMain.handle("cloudflare:login", () => cloudflareLogin());
+ipcMain.handle("cloudflare:createTunnel", (_event, input: CloudflareTunnelInput) => createNamedTunnel(input));
+ipcMain.handle("cloudflare:routeDns", (_event, input: CloudflareTunnelInput) => routeTunnelDns(input));
 ipcMain.handle("server:start", (_event, input: SaveConfigInput) => startServer(input));
 ipcMain.handle("server:stop", () => stopServer());
 ipcMain.handle("processes:stopAll", () => stopAll());

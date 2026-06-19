@@ -39,6 +39,17 @@ npx bridgedesk config set publicBaseUrl https://bridgedesk.example.com
 | `BRIDGEDESK_WORKTREE_ROOT` | Directory for managed Git worktrees. Defaults to `~/.bridgedesk/worktrees`. |
 | `BRIDGEDESK_STATE_DIR` | Directory for SQLite state. Defaults to `~/.local/share/bridgedesk`. |
 
+## Desktop Tunnel Settings
+
+The Electron launcher stores tunnel preferences in `~/.bridgedesk/config.json`.
+
+| Field | Purpose |
+| --- | --- |
+| `tunnelMode` | `quick` for temporary Cloudflare URLs or `permanent` for a fixed Cloudflare hostname. |
+| `publicBaseUrl` | Public origin used by the MCP server, without `/mcp`. |
+| `permanentTunnelName` | Cloudflare named tunnel to run in Permanent Tunnel mode. Defaults to `bridgedesk`. |
+| `permanentHostname` | Fixed HTTPS origin for Permanent Tunnel mode, for example `https://mcp.yourdomain.com`. |
+
 ## OAuth
 
 BridgeDesk uses a single-user OAuth approval flow.

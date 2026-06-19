@@ -57,8 +57,35 @@
             </div>
 
             <div class="field-row">
-              <label for="public-base-url">Public tunnel URL</label>
-              <input id="public-base-url" type="url" placeholder="https://example.trycloudflare.com" />
+              <label>Tunnel mode</label>
+              <div class="segmented" role="group" aria-label="Tunnel mode">
+                <button id="tunnel-mode-quick" class="secondary" type="button">Quick</button>
+                <button id="tunnel-mode-permanent" class="secondary" type="button">Permanent</button>
+              </div>
+            </div>
+
+            <div id="quick-tunnel-settings" class="mode-settings">
+              <div class="field-row">
+                <label for="public-base-url">Quick tunnel URL</label>
+                <input id="public-base-url" type="url" placeholder="https://example.trycloudflare.com" />
+              </div>
+            </div>
+
+            <div id="permanent-tunnel-settings" class="mode-settings" hidden>
+              <div class="field-row small">
+                <label for="permanent-tunnel-name">Tunnel name</label>
+                <input id="permanent-tunnel-name" type="text" value="bridgedesk" />
+              </div>
+              <div class="field-row">
+                <label for="permanent-hostname">Fixed public URL</label>
+                <input id="permanent-hostname" type="url" placeholder="https://mcp.yourdomain.com" />
+              </div>
+              <div class="cloudflare-actions">
+                <button id="cloudflare-login" class="secondary" type="button">Cloudflare Login</button>
+                <button id="create-named-tunnel" class="secondary" type="button">Create Tunnel</button>
+                <button id="route-tunnel-dns" class="secondary" type="button">Route DNS</button>
+                <button id="start-permanent-tunnel" type="button">Start Permanent Tunnel</button>
+              </div>
             </div>
 
             <button id="save-config" class="secondary" type="button">Save Config</button>

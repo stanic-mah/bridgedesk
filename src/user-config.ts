@@ -14,6 +14,9 @@ export interface BridgeDeskUserConfig {
   port?: number;
   allowedRoots?: string[];
   publicBaseUrl?: string | null;
+  tunnelMode?: "quick" | "permanent";
+  permanentTunnelName?: string | null;
+  permanentHostname?: string | null;
   allowedHosts?: string[];
   stateDir?: string;
   worktreeRoot?: string;

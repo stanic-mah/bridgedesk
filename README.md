@@ -47,8 +47,19 @@ npm run desktop
 ```
 
 The launcher checks local requirements, lets you choose one project folder,
-starts a Cloudflare Quick Tunnel when available, starts the BridgeDesk server,
-and copies the MCP URL and Owner password for the MCP client.
+starts a Cloudflare tunnel when available, starts the BridgeDesk server, and
+copies the MCP URL and Owner password for the MCP client.
+
+BridgeDesk supports two tunnel modes:
+
+- Quick Tunnel: easiest setup. Cloudflare gives BridgeDesk a temporary
+  `trycloudflare.com` URL, and that URL changes when the tunnel is restarted.
+- Permanent Tunnel: best for regular use. BridgeDesk uses your Cloudflare
+  account, domain, and named tunnel so the MCP URL can stay fixed, for example
+  `https://mcp.yourdomain.com/mcp`.
+
+Use Permanent Tunnel if you do not want to re-add the MCP server in ChatGPT
+after closing the app or restarting the computer.
 
 If Cloudflare Tunnel is not installed, paste any HTTPS tunnel URL into the
 launcher. The URL should point to:
