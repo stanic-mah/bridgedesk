@@ -131,6 +131,7 @@ let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let tunnelProcess: ChildProcess | null = null;
 let serverProcess: ChildProcess | null = null;
+let attachedServerPort: number | null = null;
 let cloudflaredSetupProcess: ChildProcess | null = null;
 let currentPublicBaseUrl: string | null = null;
 let currentOwnerToken: string | null = null;
@@ -187,7 +188,7 @@ function showMainWindow(): void {
 }
 
 function hasActiveSession(): boolean {
-  return Boolean(tunnelProcess || serverProcess);
+  return Boolean(tunnelProcess || serverProcess || attachedServerPort);
 }
 
 function createTray(): void {
@@ -200,7 +201,7 @@ function createTray(): void {
 
 function updateTrayMenu(): void {
   if (!tray) return;
-  const serverStatus = serverProcess ? "Server running" : "Server stopped";
+  const serverStatus = isServerRunning() ? "Server running" : "Server stopped";
   const tunnelStatus = tunnelProcess ? "Tunnel running" : "Tunnel stopped";
   tray.setToolTip(`BridgeDesk - ${tunnelStatus}, ${serverStatus}`);
   tray.setContextMenu(
@@ -208,8 +209,8 @@ function updateTrayMenu(): void {
       { label: "Show BridgeDesk", click: () => showMainWindow() },
       { label: `${tunnelStatus} / ${serverStatus}`, enabled: false },
       { type: "separator" },
-      { label: "Stop Server", enabled: Boolean(serverProcess), click: () => stopServer() },
-      { label: "Stop All", enabled: hasActiveSession(), click: () => stopAll() },
+      { label: "Stop Server", enabled: isServerRunning(), click: () => void stopServer() },
+      { label: "Stop All", enabled: hasActiveSession(), click: () => void stopAll() },
       { type: "separator" },
       { label: "Quit BridgeDesk", click: () => quitApp() },
     ]),
@@ -218,8 +219,7 @@ function updateTrayMenu(): void {
 
 function quitApp(): void {
   isQuitting = true;
-  stopAll();
-  app.quit();
+  void stopAll().finally(() => app.quit());
 }
 
 function liveMainWindow(): BrowserWindow | null {
@@ -231,7 +231,7 @@ function sendState(): void {
   const mcpUrl = currentPublicBaseUrl ? `${currentPublicBaseUrl.replace(/\/+$/, "")}/mcp` : null;
   const state: LauncherState = {
     tunnelRunning: Boolean(tunnelProcess),
-    serverRunning: Boolean(serverProcess),
+    serverRunning: isServerRunning(),
     publicBaseUrl: currentPublicBaseUrl,
     mcpUrl,
     tunnelMode: currentTunnelMode,
@@ -542,6 +542,9 @@ function normalizePublicBaseUrl(value: string | null | undefined): string | null
   parsed.hash = "";
   parsed.search = "";
   parsed.pathname = parsed.pathname.replace(/\/+$/, "");
+  if (parsed.pathname.toLowerCase() === "/mcp") {
+    parsed.pathname = "";
+  }
   return parsed.toString().replace(/\/$/, "");
 }
 
@@ -561,7 +564,57 @@ function normalizePermanentHostname(value: string | null | undefined): string | 
   if (parsed.hostname.endsWith(".trycloudflare.com")) {
     throw new Error("Permanent Tunnel mode needs your fixed Cloudflare hostname, not a Quick Tunnel URL.");
   }
+  if (parsed.pathname && parsed.pathname !== "/") {
+    throw new Error("Permanent Tunnel URL should be the fixed hostname only, without /mcp or any other path.");
+  }
   return normalized;
+}
+
+function isServerRunning(): boolean {
+  return Boolean(serverProcess || attachedServerPort);
+}
+
+async function isBridgeDeskServerRunning(port: number): Promise<boolean> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 1500);
+  try {
+    const response = await fetch(`http://127.0.0.1:${port}/.well-known/oauth-authorization-server`, {
+      signal: controller.signal,
+    });
+    if (!response.ok) return false;
+    const metadata = (await response.json()) as Record<string, unknown>;
+    return (
+      typeof metadata.authorization_endpoint === "string" &&
+      typeof metadata.token_endpoint === "string" &&
+      typeof metadata.registration_endpoint === "string" &&
+      Array.isArray(metadata.scopes_supported) &&
+      metadata.scopes_supported.includes("bridgedesk")
+    );
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function listeningPidForPort(port: number): Promise<number | null> {
+  if (!isWindows) return null;
+  const result = await runCommand("netstat", ["-ano", "-p", "tcp"]);
+  if (!result.ok) return null;
+  const escapedPort = String(port).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const pattern = new RegExp(`^\\s*TCP\\s+\\S+:${escapedPort}\\s+\\S+\\s+LISTENING\\s+(\\d+)\\s*$`, "im");
+  const match = result.text.match(pattern);
+  return match ? Number(match[1]) : null;
+}
+
+function stopProcessId(pid: number): void {
+  if (isWindows) {
+    spawn("taskkill", ["/PID", String(pid), "/T", "/F"], {
+      shell: commandShellOption(),
+      windowsHide: true,
+      stdio: "ignore",
+    });
+  }
 }
 
 function normalizeTunnelMode(value: unknown): TunnelMode {
@@ -685,12 +738,25 @@ async function checkPort(port: number): Promise<SystemCheck> {
   return new Promise((resolveCheck) => {
     const server = createServer();
     server.once("error", () => {
-      resolveCheck({
-        id: "port",
-        label: `Port ${port}`,
-        status: "busy",
-        detail: "Already in use",
-      });
+      void (async () => {
+        if (await isBridgeDeskServerRunning(port)) {
+          attachedServerPort = port;
+          sendState();
+          resolveCheck({
+            id: "port",
+            label: `Port ${port}`,
+            status: "ok",
+            detail: "BridgeDesk already running",
+          });
+          return;
+        }
+        resolveCheck({
+          id: "port",
+          label: `Port ${port}`,
+          status: "busy",
+          detail: "Already in use",
+        });
+      })();
     });
     server.once("listening", () => {
       server.close(() => {
@@ -897,8 +963,7 @@ function startTunnel(input: StartTunnelInput): void {
   startQuickTunnel(input);
 }
 
-function startServer(input: SaveConfigInput): void {
-  if (serverProcess) return;
+async function startServer(input: SaveConfigInput): Promise<void> {
   const projectRoot = validateProjectRoot(input.projectRoot);
   const tunnelMode = normalizeTunnelMode(input.tunnelMode);
   const permanentTunnelName = normalizeTunnelName(input.permanentTunnelName);
@@ -915,14 +980,33 @@ function startServer(input: SaveConfigInput): void {
         : "A public tunnel URL is required before starting BridgeDesk.",
     );
   }
+  const port = input.port || DEFAULT_PORT;
   saveConfig({
     projectRoot,
     publicBaseUrl,
     permanentHostname,
     permanentTunnelName,
     tunnelMode,
-    port: input.port,
+    port,
   });
+
+  if (serverProcess) return;
+  if (attachedServerPort === port) {
+    currentPublicBaseUrl = publicBaseUrl;
+    sendState();
+    return;
+  }
+  if (attachedServerPort !== null) {
+    attachedServerPort = null;
+  }
+
+  if (await isBridgeDeskServerRunning(port)) {
+    attachedServerPort = port;
+    currentPublicBaseUrl = publicBaseUrl;
+    sendLog("server", `Using BridgeDesk already running on http://127.0.0.1:${port}/mcp`);
+    sendState();
+    return;
+  }
 
   const child = spawn("node", [cliPath, "serve"], {
     shell: commandShellOption(),
@@ -931,14 +1015,15 @@ function startServer(input: SaveConfigInput): void {
     env: {
       ...process.env,
       HOST: "127.0.0.1",
-      PORT: String(input.port || DEFAULT_PORT),
+      PORT: String(port),
       BRIDGEDESK_ALLOWED_ROOTS: projectRoot,
       BRIDGEDESK_PUBLIC_BASE_URL: publicBaseUrl,
     },
   });
   serverProcess = child;
 
-  sendLog("server", `Starting BridgeDesk on http://127.0.0.1:${input.port || DEFAULT_PORT}/mcp`);
+  attachedServerPort = null;
+  sendLog("server", `Starting BridgeDesk on http://127.0.0.1:${port}/mcp`);
   sendState();
 
   child.stdout?.on("data", (chunk: Buffer) => sendLog("server", chunk.toString()));
@@ -947,6 +1032,7 @@ function startServer(input: SaveConfigInput): void {
   child.on("close", (code) => {
     sendLog("server", `BridgeDesk stopped with code ${code ?? "unknown"}`);
     serverProcess = null;
+    attachedServerPort = null;
     sendState();
   });
 }
@@ -1029,19 +1115,39 @@ function stopProcess(child: ChildProcess | null): void {
   child.kill();
 }
 
-function stopServer(): void {
-  stopProcess(serverProcess);
-  serverProcess = null;
+async function stopServer(): Promise<void> {
+  if (serverProcess) {
+    stopProcess(serverProcess);
+    serverProcess = null;
+    attachedServerPort = null;
+    sendState();
+    return;
+  }
+  if (attachedServerPort) {
+    const port = attachedServerPort;
+    const pid = await listeningPidForPort(port);
+    if (pid) {
+      stopProcessId(pid);
+      sendLog("server", `Stopped BridgeDesk already running on port ${port}.`);
+    } else {
+      sendLog("server", `Could not find the background BridgeDesk server on port ${port}.`);
+    }
+    attachedServerPort = null;
+  }
   sendState();
 }
 
-function stopAll(): void {
+async function stopAll(): Promise<void> {
   stopProcess(serverProcess);
   stopProcess(tunnelProcess);
   stopProcess(cloudflaredSetupProcess);
+  if (!serverProcess && attachedServerPort) {
+    await stopServer();
+  }
   serverProcess = null;
   tunnelProcess = null;
   cloudflaredSetupProcess = null;
+  attachedServerPort = null;
   sendState();
 }
 

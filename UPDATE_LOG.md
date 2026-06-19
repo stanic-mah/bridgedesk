@@ -1,5 +1,10 @@
 # BridgeDesk Update Log
 
+## 1.2.2
+
+- Fixed Permanent Tunnel URL handling so pasting an MCP URL such as `https://mcp.example.com/mcp` is saved as the fixed host and displayed as a single `/mcp` endpoint.
+- Improved server startup when BridgeDesk is already running on the local port, so the launcher attaches to the running server instead of showing a confusing stopped state.
+
 ## 1.2.1
 
 - Fixed ChatGPT connector creation by allowing trusted OpenAI and ChatGPT OAuth callback subdomains during dynamic client registration.

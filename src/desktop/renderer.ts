@@ -186,14 +186,31 @@ function publicUrlForMode(): string {
   return state.tunnelMode === "permanent" ? elements.permanentHostname.value.trim() : elements.publicBaseUrl.value.trim();
 }
 
-function displayMcpUrl(baseUrl: string): string {
+function normalizeBaseUrlInput(baseUrl: string): string {
   const trimmed = baseUrl.trim();
   if (!trimmed) return "";
   const withScheme =
     state.tunnelMode === "permanent" && !/^[a-zA-Z][a-zA-Z\d+\-.]*:\/\//.test(trimmed)
       ? `https://${trimmed}`
       : trimmed;
-  return `${withScheme.replace(/\/+$/, "")}/mcp`;
+  try {
+    const parsed = new URL(withScheme);
+    parsed.hash = "";
+    parsed.search = "";
+    parsed.pathname = parsed.pathname.replace(/\/+$/, "");
+    if (parsed.pathname.toLowerCase() === "/mcp") {
+      parsed.pathname = "";
+    }
+    return parsed.toString().replace(/\/$/, "");
+  } catch {
+    return withScheme.replace(/\/mcp\/?$/i, "").replace(/\/+$/, "");
+  }
+}
+
+function displayMcpUrl(baseUrl: string): string {
+  const normalized = normalizeBaseUrlInput(baseUrl);
+  if (!normalized) return "";
+  return `${normalized}/mcp`;
 }
 
 function syncMcpUrl(): void {
@@ -203,13 +220,15 @@ function syncMcpUrl(): void {
 }
 
 function configInput(): ConfigInput {
+  const publicBaseUrl = normalizeBaseUrlInput(elements.publicBaseUrl.value);
+  const permanentHostname = normalizeBaseUrlInput(elements.permanentHostname.value);
   return {
     projectRoot: state.projectRoot,
-    publicBaseUrl: elements.publicBaseUrl.value || null,
+    publicBaseUrl: publicBaseUrl || null,
     port: currentPort(),
     tunnelMode: state.tunnelMode,
     permanentTunnelName: elements.permanentTunnelName.value || null,
-    permanentHostname: elements.permanentHostname.value || null,
+    permanentHostname: permanentHostname || null,
   };
 }
 
