@@ -429,6 +429,37 @@ function appCsp(config: ServerConfig): {
   };
 }
 
+function issuerUrl(config: ServerConfig): string {
+  return new URL(config.publicBaseUrl).href;
+}
+
+function authorizationServerMetadata(config: ServerConfig): Record<string, unknown> {
+  const baseUrl = config.publicBaseUrl.replace(/\/+$/, "");
+
+  return {
+    issuer: issuerUrl(config),
+    authorization_endpoint: `${baseUrl}/authorize`,
+    response_types_supported: ["code"],
+    code_challenge_methods_supported: ["S256"],
+    token_endpoint: `${baseUrl}/token`,
+    token_endpoint_auth_methods_supported: ["client_secret_post", "none"],
+    grant_types_supported: ["authorization_code", "refresh_token"],
+    scopes_supported: config.oauth.scopes,
+    revocation_endpoint: `${baseUrl}/revoke`,
+    revocation_endpoint_auth_methods_supported: ["client_secret_post"],
+    registration_endpoint: `${baseUrl}/register`,
+  };
+}
+
+function protectedResourceMetadata(config: ServerConfig, mcpUrl: URL): Record<string, unknown> {
+  return {
+    resource: mcpUrl.href,
+    authorization_servers: [issuerUrl(config)],
+    scopes_supported: config.oauth.scopes,
+    resource_name: "BridgeDesk",
+  };
+}
+
 function uiBuildDirectory(): string {
   return fileURLToPath(new URL("../dist/ui", import.meta.url));
 }
@@ -1322,6 +1353,16 @@ export function createServer(config = loadConfig()): RunningServer {
       resourceName: "BridgeDesk",
     }),
   );
+
+  app.get("/.well-known/oauth-protected-resource", (_req, res) => {
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.json(protectedResourceMetadata(config, mcpUrl));
+  });
+
+  app.get("/.well-known/openid-configuration", (_req, res) => {
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.json(authorizationServerMetadata(config));
+  });
 
   app.options("/mcp-app-assets/{*asset}", (_req, res) => {
     setAssetHeaders(res);

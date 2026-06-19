@@ -183,9 +183,11 @@ function parseOAuthConfig(env: NodeJS.ProcessEnv, ownerToken: string | undefined
       DEFAULT_OAUTH_REFRESH_TOKEN_TTL_SECONDS,
       "BRIDGEDESK_OAUTH_REFRESH_TOKEN_TTL_SECONDS",
     ),
-    scopes: parseStringList(env.BRIDGEDESK_OAUTH_SCOPES, ["bridgedesk"]),
+    scopes: parseStringList(env.BRIDGEDESK_OAUTH_SCOPES, ["bridgedesk", "offline_access"]),
     allowedRedirectHosts: parseStringList(env.BRIDGEDESK_OAUTH_ALLOWED_REDIRECT_HOSTS, [
       "chatgpt.com",
+      "www.chatgpt.com",
+      "chat.openai.com",
       "localhost",
       "127.0.0.1",
     ]),
