@@ -131,6 +131,11 @@ function quitApp(): void {
   app.quit();
 }
 
+function liveMainWindow(): BrowserWindow | null {
+  if (!mainWindow || mainWindow.isDestroyed() || mainWindow.webContents.isDestroyed()) return null;
+  return mainWindow;
+}
+
 function sendState(): void {
   const mcpUrl = currentPublicBaseUrl ? `${currentPublicBaseUrl.replace(/\/+$/, "")}/mcp` : null;
   const state: LauncherState = {
@@ -139,7 +144,7 @@ function sendState(): void {
     publicBaseUrl: currentPublicBaseUrl,
     mcpUrl,
   };
-  mainWindow?.webContents.send("state:update", state);
+  liveMainWindow()?.webContents.send("state:update", state);
   updateTrayMenu();
 }
 
@@ -159,7 +164,7 @@ function sendLog(source: "system" | "tunnel" | "server", message: string): void 
     .map((line) => line.trimEnd())
     .filter(Boolean);
   for (const line of lines) {
-    mainWindow?.webContents.send("log", {
+    liveMainWindow()?.webContents.send("log", {
       source,
       message: line,
       time: new Date().toISOString(),
