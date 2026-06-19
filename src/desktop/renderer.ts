@@ -43,6 +43,7 @@ declare global {
       saveConfig(input: { projectRoot: string; publicBaseUrl: string | null; port: number }): Promise<ConfigSummary>;
       startTunnel(input: { projectRoot: string | null; port: number }): Promise<void>;
       startServer(input: { projectRoot: string; publicBaseUrl: string | null; port: number }): Promise<void>;
+      stopServer(): Promise<void>;
       stopAll(): Promise<void>;
       copyText(text: string): Promise<void>;
       openExternal(url: string): Promise<void>;
@@ -90,6 +91,7 @@ const elements = {
   saveConfig: requiredElement<HTMLButtonElement>("save-config"),
   startTunnel: requiredElement<HTMLButtonElement>("start-tunnel"),
   startServer: requiredElement<HTMLButtonElement>("start-server"),
+  stopServer: requiredElement<HTMLButtonElement>("stop-server"),
   stopAll: requiredElement<HTMLButtonElement>("stop-all"),
   copyMcp: requiredElement<HTMLButtonElement>("copy-mcp"),
   copyOwner: requiredElement<HTMLButtonElement>("copy-owner"),
@@ -175,6 +177,7 @@ function renderControls(): void {
   elements.saveConfig.disabled = !hasProject;
   elements.startTunnel.disabled = state.tunnelRunning;
   elements.startServer.disabled = !hasProject || !hasPublicUrl || state.serverRunning;
+  elements.stopServer.disabled = !state.serverRunning;
   elements.stopAll.disabled = !state.tunnelRunning && !state.serverRunning;
   elements.copyMcp.disabled = !state.mcpUrl;
   elements.copyOwner.disabled = !state.ownerPassword;
@@ -265,6 +268,9 @@ elements.startServer.addEventListener("click", async () => {
 });
 elements.stopAll.addEventListener("click", async () => {
   await window.bridgeDesk.stopAll();
+});
+elements.stopServer.addEventListener("click", async () => {
+  await window.bridgeDesk.stopServer();
 });
 elements.copyMcp.addEventListener("click", async () => {
   if (!state.mcpUrl) return;

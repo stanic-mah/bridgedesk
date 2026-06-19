@@ -7,6 +7,7 @@ contextBridge.exposeInMainWorld("bridgeDesk", {
   saveConfig: (input: unknown) => ipcRenderer.invoke("config:save", input),
   startTunnel: (input: unknown) => ipcRenderer.invoke("tunnel:start", input),
   startServer: (input: unknown) => ipcRenderer.invoke("server:start", input),
+  stopServer: () => ipcRenderer.invoke("server:stop"),
   stopAll: () => ipcRenderer.invoke("processes:stopAll"),
   copyText: (text: string) => ipcRenderer.invoke("clipboard:write", text),
   openExternal: (url: string) => ipcRenderer.invoke("external:open", url),

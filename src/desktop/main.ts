@@ -415,6 +415,12 @@ function stopProcess(child: ChildProcess | null): void {
   child.kill();
 }
 
+function stopServer(): void {
+  stopProcess(serverProcess);
+  serverProcess = null;
+  sendState();
+}
+
 function stopAll(): void {
   stopProcess(serverProcess);
   stopProcess(tunnelProcess);
@@ -441,6 +447,7 @@ ipcMain.handle("tunnel:start", (_event, input: { projectRoot: string | null; por
   startTunnel(input.projectRoot, input.port || DEFAULT_PORT);
 });
 ipcMain.handle("server:start", (_event, input: SaveConfigInput) => startServer(input));
+ipcMain.handle("server:stop", () => stopServer());
 ipcMain.handle("processes:stopAll", () => stopAll());
 ipcMain.handle("clipboard:write", (_event, text: string) => {
   clipboard.writeText(text);
