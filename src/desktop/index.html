@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>BridgeDesk</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <aside class="rail">
+        <div class="brand">
+          <div class="mark">BD</div>
+          <div>
+            <h1>BridgeDesk</h1>
+            <p>Local MCP launcher</p>
+          </div>
+        </div>
+        <div id="checks" class="checks"></div>
+        <button id="refresh-checks" class="secondary" type="button">Refresh Checks</button>
+      </aside>
+
+      <section class="workspace">
+        <header class="toolbar">
+          <div>
+            <h2>Session</h2>
+            <p>127.0.0.1</p>
+          </div>
+          <div class="actions">
+            <button id="start-tunnel" type="button">Start Tunnel</button>
+            <button id="start-server" type="button">Start Server</button>
+            <button id="stop-all" class="danger" type="button">Stop</button>
+          </div>
+        </header>
+
+        <section class="grid">
+          <div class="panel setup-panel">
+            <div class="field-row">
+              <label for="project-root">Project folder</label>
+              <div class="joined">
+                <input id="project-root" type="text" readonly />
+                <button id="choose-project" type="button">Choose</button>
+              </div>
+            </div>
+
+            <div class="field-row small">
+              <label for="port">Port</label>
+              <input id="port" type="number" min="1" max="65535" value="7676" />
+            </div>
+
+            <div class="field-row">
+              <label for="public-base-url">Public tunnel URL</label>
+              <input id="public-base-url" type="url" placeholder="https://example.trycloudflare.com" />
+            </div>
+
+            <button id="save-config" class="secondary" type="button">Save Config</button>
+          </div>
+
+          <div class="panel handoff-panel">
+            <div class="field-row">
+              <label for="mcp-url">MCP URL</label>
+              <div class="joined">
+                <input id="mcp-url" type="text" readonly />
+                <button id="copy-mcp" type="button">Copy</button>
+              </div>
+            </div>
+            <div class="field-row">
+              <label for="owner-password">Owner password</label>
+              <div class="joined">
+                <input id="owner-password" type="password" readonly />
+                <button id="copy-owner" type="button">Copy</button>
+              </div>
+            </div>
+            <button id="open-chatgpt" class="secondary" type="button">Open ChatGPT</button>
+          </div>
+        </section>
+
+        <section class="lower">
+          <div class="panel summary-panel">
+            <h3>Status</h3>
+            <div id="summary" class="summary"></div>
+          </div>
+          <div class="panel log-panel">
+            <h3>Log</h3>
+            <pre id="log"></pre>
+          </div>
+        </section>
+      </section>
+    </main>
+    <script type="module" src="./renderer.js"></script>
+  </body>
+</html>

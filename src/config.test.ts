@@ -1,0 +1,170 @@
+import assert from "node:assert/strict";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { loadConfig } from "./config.js";
+
+const emptyConfigDir = mkdtempSync(join(tmpdir(), "bridgedesk-empty-config-test-"));
+const baseEnv = {
+  BRIDGEDESK_CONFIG_DIR: emptyConfigDir,
+  BRIDGEDESK_ALLOWED_ROOTS: process.cwd(),
+  BRIDGEDESK_OAUTH_OWNER_TOKEN: "test-owner-token-that-is-long-enough",
+};
+
+assert.equal(loadConfig(baseEnv).widgets, "full");
+assert.equal(loadConfig({ ...baseEnv, BRIDGEDESK_WIDGETS: "changes" }).widgets, "changes");
+assert.equal(loadConfig({ ...baseEnv, BRIDGEDESK_WIDGETS: "full" }).widgets, "full");
+assert.equal(loadConfig({ ...baseEnv, BRIDGEDESK_WIDGETS: "off" }).widgets, "off");
+assert.equal(loadConfig(baseEnv).toolNaming, "short");
+assert.equal(loadConfig({ ...baseEnv, BRIDGEDESK_TOOL_NAMING: "short" }).toolNaming, "short");
+assert.equal(loadConfig({ ...baseEnv, BRIDGEDESK_TOOL_NAMING: "legacy" }).toolNaming, "legacy");
+assert.equal(loadConfig(baseEnv).minimalTools, true);
+assert.equal(loadConfig({ ...baseEnv, BRIDGEDESK_TOOL_MODE: "minimal" }).minimalTools, true);
+assert.equal(loadConfig({ ...baseEnv, BRIDGEDESK_TOOL_MODE: "full" }).minimalTools, false);
+assert.equal(loadConfig({ ...baseEnv, BRIDGEDESK_MINIMAL_TOOLS: "0" }).minimalTools, false);
+assert.equal(loadConfig({ ...baseEnv, BRIDGEDESK_MINIMAL_TOOLS: "1" }).minimalTools, true);
+assert.equal(loadConfig(baseEnv).skillsEnabled, true);
+assert.equal(loadConfig({ ...baseEnv, BRIDGEDESK_SKILLS: "0" }).skillsEnabled, false);
+assert.equal(loadConfig({ ...baseEnv, BRIDGEDESK_SKILLS: "1" }).skillsEnabled, true);
+
+assert.throws(
+  () => loadConfig({ ...baseEnv, BRIDGEDESK_WIDGETS: "invalid" }),
+  /Invalid BRIDGEDESK_WIDGETS: invalid/,
+);
+assert.throws(
+  () => loadConfig({ ...baseEnv, BRIDGEDESK_WIDGETS: "minimal" }),
+  /Invalid BRIDGEDESK_WIDGETS: minimal/,
+);
+assert.throws(
+  () => loadConfig({ ...baseEnv, BRIDGEDESK_WIDGETS: "write-only" }),
+  /Invalid BRIDGEDESK_WIDGETS: write-only/,
+);
+assert.throws(
+  () => loadConfig({ ...baseEnv, BRIDGEDESK_TOOL_MODE: "invalid" }),
+  /Invalid BRIDGEDESK_TOOL_MODE: invalid/,
+);
+assert.throws(
+  () => loadConfig({ ...baseEnv, BRIDGEDESK_TOOL_NAMING: "invalid" }),
+  /Invalid BRIDGEDESK_TOOL_NAMING: invalid/,
+);
+
+assert.deepEqual(loadConfig(baseEnv).logging, {
+  level: "info",
+  format: "json",
+  requests: true,
+  assets: false,
+  toolCalls: true,
+  shellCommands: false,
+  trustProxy: false,
+});
+
+assert.equal(loadConfig({ ...baseEnv, BRIDGEDESK_LOG_LEVEL: "silent" }).logging.level, "silent");
+assert.equal(loadConfig({ ...baseEnv, BRIDGEDESK_LOG_LEVEL: "error" }).logging.level, "error");
+assert.equal(loadConfig({ ...baseEnv, BRIDGEDESK_LOG_LEVEL: "warn" }).logging.level, "warn");
+assert.equal(loadConfig({ ...baseEnv, BRIDGEDESK_LOG_LEVEL: "info" }).logging.level, "info");
+assert.equal(loadConfig({ ...baseEnv, BRIDGEDESK_LOG_LEVEL: "debug" }).logging.level, "debug");
+
+assert.equal(loadConfig({ ...baseEnv, BRIDGEDESK_LOG_FORMAT: "json" }).logging.format, "json");
+assert.equal(loadConfig({ ...baseEnv, BRIDGEDESK_LOG_FORMAT: "pretty" }).logging.format, "pretty");
+
+assert.equal(loadConfig({ ...baseEnv, BRIDGEDESK_LOG_REQUESTS: "0" }).logging.requests, false);
+assert.equal(loadConfig({ ...baseEnv, BRIDGEDESK_LOG_ASSETS: "1" }).logging.assets, true);
+assert.equal(loadConfig({ ...baseEnv, BRIDGEDESK_LOG_TOOL_CALLS: "0" }).logging.toolCalls, false);
+assert.equal(loadConfig({ ...baseEnv, BRIDGEDESK_LOG_SHELL_COMMANDS: "1" }).logging.shellCommands, true);
+assert.equal(loadConfig({ ...baseEnv, BRIDGEDESK_TRUST_PROXY: "1" }).logging.trustProxy, true);
+
+assert.throws(
+  () => loadConfig({ ...baseEnv, BRIDGEDESK_LOG_LEVEL: "trace" }),
+  /Invalid BRIDGEDESK_LOG_LEVEL: trace/,
+);
+
+assert.throws(
+  () => loadConfig({ ...baseEnv, BRIDGEDESK_LOG_FORMAT: "color" }),
+  /Invalid BRIDGEDESK_LOG_FORMAT: color/,
+);
+
+assert.equal(loadConfig(baseEnv).oauth.ownerToken, "test-owner-token-that-is-long-enough");
+assert.deepEqual(loadConfig(baseEnv).oauth.scopes, ["bridgedesk"]);
+assert.deepEqual(loadConfig(baseEnv).oauth.allowedRedirectHosts, [
+  "chatgpt.com",
+  "localhost",
+  "127.0.0.1",
+]);
+assert.equal(loadConfig(baseEnv).oauth.accessTokenTtlSeconds, 3600);
+assert.equal(loadConfig(baseEnv).oauth.refreshTokenTtlSeconds, 2592000);
+
+assert.deepEqual(
+  loadConfig({ ...baseEnv, BRIDGEDESK_OAUTH_SCOPES: "bridgedesk,admin" }).oauth.scopes,
+  ["bridgedesk", "admin"],
+);
+assert.deepEqual(
+  loadConfig({ ...baseEnv, BRIDGEDESK_OAUTH_ALLOWED_REDIRECT_HOSTS: "chatgpt.com,example.com" }).oauth
+    .allowedRedirectHosts,
+  ["chatgpt.com", "example.com"],
+);
+assert.equal(
+  loadConfig({ ...baseEnv, BRIDGEDESK_OAUTH_ACCESS_TOKEN_TTL_SECONDS: "120" }).oauth
+    .accessTokenTtlSeconds,
+  120,
+);
+assert.equal(
+  loadConfig({ ...baseEnv, BRIDGEDESK_OAUTH_REFRESH_TOKEN_TTL_SECONDS: "240" }).oauth
+    .refreshTokenTtlSeconds,
+  240,
+);
+
+assert.throws(
+  () => loadConfig({ BRIDGEDESK_CONFIG_DIR: emptyConfigDir, BRIDGEDESK_ALLOWED_ROOTS: process.cwd() }),
+  /BRIDGEDESK_OAUTH_OWNER_TOKEN is required/,
+);
+assert.throws(
+  () => loadConfig({ ...baseEnv, BRIDGEDESK_OAUTH_OWNER_TOKEN: "too-short" }),
+  /BRIDGEDESK_OAUTH_OWNER_TOKEN must be at least 16 characters long/,
+);
+assert.throws(
+  () => loadConfig({ ...baseEnv, BRIDGEDESK_OAUTH_ACCESS_TOKEN_TTL_SECONDS: "0" }),
+  /Invalid BRIDGEDESK_OAUTH_ACCESS_TOKEN_TTL_SECONDS: 0/,
+);
+
+assert.equal(loadConfig(baseEnv).publicBaseUrl, "http://127.0.0.1:7676");
+assert.deepEqual(loadConfig(baseEnv).allowedHosts, ["localhost", "127.0.0.1", "::1"]);
+
+assert.equal(
+  loadConfig({ ...baseEnv, BRIDGEDESK_PUBLIC_BASE_URL: "https://abc.trycloudflare.com/" }).publicBaseUrl,
+  "https://abc.trycloudflare.com",
+);
+assert.deepEqual(
+  loadConfig({ ...baseEnv, BRIDGEDESK_PUBLIC_BASE_URL: "https://abc.trycloudflare.com/" }).allowedHosts,
+  ["localhost", "127.0.0.1", "::1", "abc.trycloudflare.com"],
+);
+assert.deepEqual(
+  loadConfig({ ...baseEnv, BRIDGEDESK_ALLOWED_HOSTS: "*" }).allowedHosts,
+  ["*"],
+);
+
+const configDir = mkdtempSync(join(tmpdir(), "bridgedesk-config-test-"));
+writeFileSync(
+  join(configDir, "config.json"),
+  JSON.stringify({
+    port: 8787,
+    allowedRoots: [process.cwd()],
+    publicBaseUrl: "https://bridgedesk.example.com",
+  }),
+);
+writeFileSync(
+  join(configDir, "auth.json"),
+  JSON.stringify({
+    ownerToken: "persisted-owner-token-long-enough",
+  }),
+);
+
+const fileConfig = loadConfig({ BRIDGEDESK_CONFIG_DIR: configDir });
+assert.equal(fileConfig.port, 8787);
+assert.equal(fileConfig.oauth.ownerToken, "persisted-owner-token-long-enough");
+assert.equal(fileConfig.publicBaseUrl, "https://bridgedesk.example.com");
+assert.deepEqual(fileConfig.allowedHosts, [
+  "localhost",
+  "127.0.0.1",
+  "::1",
+  "bridgedesk.example.com",
+]);
