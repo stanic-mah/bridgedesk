@@ -1,6 +1,6 @@
 {
   "name": "bridgedesk",
-  "version": "1.2.14",
+  "version": "1.2.13",
   "description": "Desktop launcher and secure local MCP workspace bridge for ChatGPT and other MCP clients.",
   "type": "module",
   "main": "dist/server.js",
@@ -15,7 +15,6 @@
     "docs",
     "scripts",
     "README.md",
-    "RELEASE_NOTES_TEMPLATE.md",
     "UPDATE_LOG.md"
   ],
   "publishConfig": {
@@ -30,7 +29,6 @@
     "desktop": "npm run build && electron dist/desktop/main.js",
     "dev": "node scripts/dev-server.mjs",
     "release:check": "node scripts/release-check.mjs",
-    "release:notes": "node scripts/release-notes.mjs",
     "start": "node dist/cli.js serve",
     "test": "tsx src/config.test.ts && tsx src/oauth-provider.test.ts && tsx src/roots.test.ts && tsx src/pi-tools.test.ts && tsx src/skills.test.ts && tsx src/workspaces.test.ts && tsx src/review-checkpoints.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"

@@ -12,7 +12,6 @@ function fail(message) {
 const packageJson = readJson("package.json");
 const packageLock = readJson("package-lock.json");
 const updateLog = readFileSync("UPDATE_LOG.md", "utf8");
-const releaseNotesTemplate = readFileSync("RELEASE_NOTES_TEMPLATE.md", "utf8");
 
 const packageVersion = packageJson.version;
 const lockVersion = packageLock.version;
@@ -28,18 +27,6 @@ if (lockRootVersion !== packageVersion) {
 }
 if (updateLogVersion !== packageVersion) {
   fail(`UPDATE_LOG.md top entry ${updateLogVersion ?? "missing"} does not match package.json ${packageVersion}.`);
-}
-if (!packageJson.scripts?.["release:notes"]) {
-  fail("package.json is missing the release:notes script.");
-}
-for (const requiredText of [
-  "BridgeDesk v{{version}} focuses on {{focus}}.",
-  "Recommended download: `BridgeDesk-Setup.exe`",
-  "The portable exe is included for manual use only. Auto-update uses the installer plus `latest.yml`.",
-]) {
-  if (!releaseNotesTemplate.includes(requiredText)) {
-    fail(`RELEASE_NOTES_TEMPLATE.md is missing required text: ${requiredText}`);
-  }
 }
 
 if (process.exitCode) {

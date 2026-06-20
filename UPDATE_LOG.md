@@ -1,11 +1,5 @@
 # BridgeDesk Update Log
 
-## 1.2.14
-
-- Added a shared GitHub release notes template matching the BridgeDesk v1.2.13 format.
-- Added release note generation tooling so future GitHub releases use the same structure.
-- Standardized previous GitHub release notes around the shared installer and auto-update wording.
-
 ## 1.2.13
 
 - Hardened the BridgeDesk write tool so new files are written directly through the local filesystem and verified before reporting success.
