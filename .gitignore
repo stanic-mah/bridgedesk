@@ -5,3 +5,4 @@ release/
 release-fixed/
 .env
 *.log
+AGENTS.md
