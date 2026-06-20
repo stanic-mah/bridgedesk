@@ -1,5 +1,10 @@
 # BridgeDesk Update Log
 
+## 1.2.9
+
+- Fixed tunneled OAuth requests by trusting proxy headers only from the local Cloudflare connector when BridgeDesk is served through a public HTTPS tunnel.
+- Removed Express rate-limit proxy-header warnings that could interfere with real ChatGPT connector requests after owner-password approval.
+
 ## 1.2.8
 
 - Fixed Permanent Tunnel startup by writing a Cloudflare named-tunnel ingress config before running the tunnel.

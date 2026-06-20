@@ -143,6 +143,18 @@ assert.equal(
   loadConfig({ ...baseEnv, BRIDGEDESK_PUBLIC_BASE_URL: "https://abc.trycloudflare.com/" }).publicBaseUrl,
   "https://abc.trycloudflare.com",
 );
+assert.equal(
+  loadConfig({ ...baseEnv, BRIDGEDESK_PUBLIC_BASE_URL: "https://abc.trycloudflare.com/" }).logging.trustProxy,
+  true,
+);
+assert.equal(
+  loadConfig({
+    ...baseEnv,
+    BRIDGEDESK_PUBLIC_BASE_URL: "https://abc.trycloudflare.com/",
+    BRIDGEDESK_TRUST_PROXY: "0",
+  }).logging.trustProxy,
+  false,
+);
 assert.deepEqual(
   loadConfig({ ...baseEnv, BRIDGEDESK_PUBLIC_BASE_URL: "https://abc.trycloudflare.com/" }).allowedHosts,
   ["localhost", "127.0.0.1", "::1", "abc.trycloudflare.com"],
@@ -172,6 +184,7 @@ const fileConfig = loadConfig({ BRIDGEDESK_CONFIG_DIR: configDir });
 assert.equal(fileConfig.port, 8787);
 assert.equal(fileConfig.oauth.ownerToken, "persisted-owner-token-long-enough");
 assert.equal(fileConfig.publicBaseUrl, "https://bridgedesk.example.com");
+assert.equal(fileConfig.logging.trustProxy, true);
 assert.deepEqual(fileConfig.allowedHosts, [
   "localhost",
   "127.0.0.1",

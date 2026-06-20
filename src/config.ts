@@ -140,7 +140,7 @@ function parseToolNaming(value: string | undefined): ToolNamingMode {
   throw new Error(`Invalid BRIDGEDESK_TOOL_NAMING: ${value}`);
 }
 
-function parseLoggingConfig(env: NodeJS.ProcessEnv): LoggingConfig {
+function parseLoggingConfig(env: NodeJS.ProcessEnv, defaultTrustProxy = false): LoggingConfig {
   return {
     level: parseLogLevel(env.BRIDGEDESK_LOG_LEVEL),
     format: parseLogFormat(env.BRIDGEDESK_LOG_FORMAT),
@@ -148,7 +148,7 @@ function parseLoggingConfig(env: NodeJS.ProcessEnv): LoggingConfig {
     assets: parseBoolean(env.BRIDGEDESK_LOG_ASSETS),
     toolCalls: env.BRIDGEDESK_LOG_TOOL_CALLS === undefined ? true : parseBoolean(env.BRIDGEDESK_LOG_TOOL_CALLS),
     shellCommands: parseBoolean(env.BRIDGEDESK_LOG_SHELL_COMMANDS),
-    trustProxy: parseBoolean(env.BRIDGEDESK_TRUST_PROXY),
+    trustProxy: env.BRIDGEDESK_TRUST_PROXY === undefined ? defaultTrustProxy : parseBoolean(env.BRIDGEDESK_TRUST_PROXY),
   };
 }
 
@@ -244,7 +244,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     skillsEnabled: env.BRIDGEDESK_SKILLS === undefined ? true : parseBoolean(env.BRIDGEDESK_SKILLS),
     skillPaths: parsePathList(env.BRIDGEDESK_SKILL_PATHS),
     agentDir: resolve(expandHomePath(env.BRIDGEDESK_AGENT_DIR ?? files.config.agentDir ?? defaultAgentDir())),
-    logging: parseLoggingConfig(env),
+    logging: parseLoggingConfig(env, publicUrlNeedsTrustedProxy(publicBaseUrl)),
   };
 }
 
@@ -254,6 +254,12 @@ function parsePublicBaseUrl(value: string): string {
   parsed.search = "";
   parsed.pathname = parsed.pathname.replace(/\/+$/, "");
   return parsed.toString().replace(/\/$/, "");
+}
+
+function publicUrlNeedsTrustedProxy(value: string): boolean {
+  const parsed = new URL(value);
+  if (parsed.protocol !== "https:") return false;
+  return !["localhost", "127.0.0.1", "::1"].includes(parsed.hostname);
 }
 
 function localPublicBaseUrl(host: string, port: number): string {
