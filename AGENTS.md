@@ -35,3 +35,6 @@ Core constraints:
 - Before any commit and push, update the app version first and add the matching
   entry to `UPDATE_LOG.md`. Do not commit release-worthy app changes without the
   version and update log already matching.
+- Use `RELEASE_NOTES_TEMPLATE.md` and `npm run release:notes -- <version> --focus
+  "<focus>"` for GitHub Release notes. Keep the installer and auto-update wording
+  consistent with the template for every release.
