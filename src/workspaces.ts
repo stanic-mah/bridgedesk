@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { WorkspaceMode, WorkspaceStore } from "./workspace-store.js";
 import { mkdir, opendir, stat } from "node:fs/promises";
-import { dirname, join, relative, resolve, sep } from "node:path";
+import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { loadProjectContextFiles } from "@earendil-works/pi-coding-agent";
 import type { ServerConfig } from "./config.js";
 import { createManagedWorktree } from "./git-worktrees.js";
@@ -56,7 +56,7 @@ export interface WorkspaceReadPath {
 }
 
 export interface OpenWorkspaceInput {
-  path: string;
+  path?: string | null;
   mode?: WorkspaceMode;
   baseRef?: string;
 }
@@ -72,12 +72,13 @@ export class WorkspaceRegistry {
   async openWorkspace(input: string | OpenWorkspaceInput): Promise<WorkspaceContext> {
     const options = typeof input === "string" ? { path: input } : input;
     const mode = options.mode ?? "checkout";
+    const path = this.resolveRequestedWorkspacePath(options.path);
 
     if (mode === "worktree") {
-      return this.openWorktreeWorkspace(options.path, options.baseRef);
+      return this.openWorktreeWorkspace(path, options.baseRef);
     }
 
-    return this.openCheckoutWorkspace(options.path);
+    return this.openCheckoutWorkspace(path);
   }
 
   getWorkspace(workspaceId: string): Workspace {
@@ -170,6 +171,25 @@ export class WorkspaceRegistry {
     }
 
     return this.createWorkspaceContext({ root, mode: "checkout" });
+  }
+
+  private resolveRequestedWorkspacePath(path: string | null | undefined): string {
+    const selectedRoot = this.config.allowedRoots[0];
+    if (!selectedRoot) {
+      throw new Error("BridgeDesk has no configured project folder. Choose a project folder in the desktop app first.");
+    }
+
+    const trimmed = path?.trim() ?? "";
+    const normalized = trimmed.replace(/[\\/]+$/, "").toLowerCase();
+    if (DEFAULT_WORKSPACE_ALIASES.has(normalized)) {
+      return selectedRoot;
+    }
+
+    if (normalized === basename(selectedRoot).toLowerCase()) {
+      return selectedRoot;
+    }
+
+    return trimmed;
   }
 
   private async openWorktreeWorkspace(path: string, baseRef: string | undefined): Promise<WorkspaceContext> {
@@ -274,6 +294,23 @@ export class WorkspaceRegistry {
 }
 
 const CONTEXT_FILE_NAMES = new Set(["AGENTS.md", "AGENTS.MD", "CLAUDE.md", "CLAUDE.MD"]);
+const DEFAULT_WORKSPACE_ALIASES = new Set([
+  "",
+  ".",
+  "selected",
+  "selected project",
+  "selected folder",
+  "current",
+  "current project",
+  "current folder",
+  "configured",
+  "configured project",
+  "configured folder",
+  "project",
+  "project folder",
+  "workspace",
+  "default",
+]);
 const SKIPPED_CONTEXT_DIRS = new Set([
   ".git",
   ".hg",

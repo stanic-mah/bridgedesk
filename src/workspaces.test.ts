@@ -30,8 +30,16 @@ try {
   });
   const registry = new WorkspaceRegistry(config);
   const { workspace, agentsFiles, availableAgentsFiles } = await registry.openWorkspace(root);
+  const defaultWorkspace = await registry.openWorkspace(".");
+  const blankWorkspace = await registry.openWorkspace("");
+  const selectedWorkspace = await registry.openWorkspace("selected project");
+  const namedWorkspace = await registry.openWorkspace(root.split(/[\\/]/).at(-1) ?? "");
 
   assert.equal(workspace.mode, "checkout");
+  assert.equal(defaultWorkspace.workspace.root, root);
+  assert.equal(blankWorkspace.workspace.root, root);
+  assert.equal(selectedWorkspace.workspace.root, root);
+  assert.equal(namedWorkspace.workspace.root, root);
   assert.deepEqual(
     agentsFiles.map((file) => file.content),
     ["global instructions\n", "root instructions\n"],

@@ -148,6 +148,9 @@ const elements = {
   updateStatus: requiredElement<HTMLDivElement>("update-status"),
   checkUpdates: requiredElement<HTMLButtonElement>("check-updates"),
   openReleases: requiredElement<HTMLButtonElement>("open-releases"),
+  openGuide: requiredElement<HTMLButtonElement>("open-guide"),
+  closeGuide: requiredElement<HTMLButtonElement>("close-guide"),
+  guideModal: requiredElement<HTMLDivElement>("guide-modal"),
   projectRoot: requiredElement<HTMLInputElement>("project-root"),
   publicBaseUrl: requiredElement<HTMLInputElement>("public-base-url"),
   permanentHostname: requiredElement<HTMLInputElement>("permanent-hostname"),
@@ -247,6 +250,10 @@ function setMessage(message: string): void {
   });
   state.logs = state.logs.slice(0, 300);
   renderLogs();
+}
+
+function setGuideOpen(open: boolean): void {
+  elements.guideModal.hidden = !open;
 }
 
 function applyConfigSummary(summary: ConfigSummary): void {
@@ -461,6 +468,11 @@ elements.openReleases.addEventListener("click", async () => {
   const url = state.appInfo?.latestReleaseUrl ?? "https://github.com/stanic-mah/bridgedesk/releases/latest";
   await window.bridgeDesk.openExternal(url);
 });
+elements.openGuide.addEventListener("click", () => setGuideOpen(true));
+elements.closeGuide.addEventListener("click", () => setGuideOpen(false));
+elements.guideModal.addEventListener("click", (event) => {
+  if (event.target === elements.guideModal) setGuideOpen(false);
+});
 elements.chooseProject.addEventListener("click", async () => {
   try {
     const folder = await window.bridgeDesk.chooseProject();
@@ -512,6 +524,17 @@ elements.copyOwner.addEventListener("click", async () => {
 });
 elements.openChatGpt.addEventListener("click", async () => {
   await window.bridgeDesk.openExternal("https://chatgpt.com/");
+});
+document.addEventListener("click", (event) => {
+  const target = event.target instanceof HTMLElement ? event.target.closest("[data-open-external]") : null;
+  if (!(target instanceof HTMLElement)) return;
+  const url = target.dataset.openExternal;
+  if (!url) return;
+  event.preventDefault();
+  void window.bridgeDesk.openExternal(url);
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") setGuideOpen(false);
 });
 elements.publicBaseUrl.addEventListener("input", () => {
   syncMcpUrl();

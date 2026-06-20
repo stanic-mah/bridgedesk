@@ -113,6 +113,8 @@ const LATEST_RELEASE_URL = `${RELEASES_URL}/latest`;
 const LATEST_YML_URL = `${LATEST_RELEASE_URL}/download/latest.yml`;
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const cliPath = resolve(__dirname, "../cli.js");
+const windowIconPath = resolve(__dirname, "icon.png");
+const trayIconPath = resolve(__dirname, "tray-icon.png");
 const require = createRequire(import.meta.url);
 const { autoUpdater } = require("electron-updater") as { autoUpdater: AppUpdater };
 const isWindows = process.platform === "win32";
@@ -124,7 +126,7 @@ const WINDOWS_CLOUDFLARED_CANDIDATES = [
   "C:\\Program Files\\cloudflared\\cloudflared.exe",
   "C:\\Program Files (x86)\\cloudflared\\cloudflared.exe",
 ];
-const TRAY_ICON_DATA_URL =
+const FALLBACK_TRAY_ICON_DATA_URL =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAUElEQVR4nGOQjw34P5CYYdQBow4YdcCoA7AJ4gK4DCFV/dBxAK3ERx0wdBxAbKIavg4Y8CgYdcCAOwAdEEqExKof/A6gJx51wKgDRh0w6gAA2gFNvcCqitUAAAAASUVORK5CYII=";
 
 let mainWindow: BrowserWindow | null = null;
@@ -156,6 +158,7 @@ function createMainWindow(): void {
     minWidth: 900,
     minHeight: 620,
     title: "BridgeDesk",
+    icon: windowIconPath,
     backgroundColor: "#f7f7f2",
     webPreferences: {
       preload: resolve(__dirname, "preload.js"),
@@ -193,7 +196,8 @@ function hasActiveSession(): boolean {
 
 function createTray(): void {
   if (tray) return;
-  const icon = nativeImage.createFromDataURL(TRAY_ICON_DATA_URL);
+  const fileIcon = nativeImage.createFromPath(trayIconPath);
+  const icon = fileIcon.isEmpty() ? nativeImage.createFromDataURL(FALLBACK_TRAY_ICON_DATA_URL) : fileIcon;
   tray = new Tray(icon);
   tray.on("click", () => showMainWindow());
   updateTrayMenu();

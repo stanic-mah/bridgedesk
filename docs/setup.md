@@ -3,6 +3,11 @@
 This guide is for users who want ChatGPT or another MCP host to work in local
 projects through BridgeDesk.
 
+For the complete desktop app walkthrough, start with
+[BridgeDesk User Guide](user-guide.md). It covers Cloudflare Tunnel
+installation, Permanent Tunnel setup, ChatGPT connection, daily use, and
+troubleshooting.
+
 ## Requirements
 
 - Node `>=20.12 <27`; Node 22 LTS is recommended

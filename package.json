@@ -1,6 +1,6 @@
 {
   "name": "bridgedesk",
-  "version": "1.2.9",
+  "version": "1.2.13",
   "description": "Desktop launcher and secure local MCP workspace bridge for ChatGPT and other MCP clients.",
   "type": "module",
   "main": "dist/server.js",
@@ -30,7 +30,7 @@
     "dev": "node scripts/dev-server.mjs",
     "release:check": "node scripts/release-check.mjs",
     "start": "node dist/cli.js serve",
-    "test": "tsx src/config.test.ts && tsx src/oauth-provider.test.ts && tsx src/roots.test.ts && tsx src/skills.test.ts && tsx src/workspaces.test.ts && tsx src/review-checkpoints.test.ts",
+    "test": "tsx src/config.test.ts && tsx src/oauth-provider.test.ts && tsx src/roots.test.ts && tsx src/pi-tools.test.ts && tsx src/skills.test.ts && tsx src/workspaces.test.ts && tsx src/review-checkpoints.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "keywords": [
@@ -104,7 +104,8 @@
       "main": "dist/desktop/main.js"
     },
     "win": {
-      "signAndEditExecutable": false,
+      "icon": "build/icon.ico",
+      "signExecutable": false,
       "target": [
         "nsis",
         "portable"

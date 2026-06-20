@@ -10,7 +10,7 @@
     <main class="app-shell">
       <aside class="rail">
         <div class="brand">
-          <div class="mark">BD</div>
+          <img class="mark" src="./icon.png" alt="BridgeDesk" />
           <div>
             <h1>BridgeDesk</h1>
             <p>Local MCP launcher <span id="app-version">v...</span></p>
@@ -21,6 +21,7 @@
           <div class="about-actions">
             <button id="check-updates" class="secondary" type="button">Check Updates</button>
             <button id="open-releases" class="secondary" type="button">Releases</button>
+            <button id="open-guide" class="secondary wide" type="button">Guide</button>
           </div>
         </div>
         <div id="checks" class="checks"></div>
@@ -121,6 +122,115 @@
           </div>
         </section>
       </section>
+
+      <div id="guide-modal" class="guide-backdrop" hidden>
+        <section class="guide-dialog" role="dialog" aria-modal="true" aria-labelledby="guide-title">
+          <header class="guide-header">
+            <div>
+              <h2 id="guide-title">How to use BridgeDesk</h2>
+              <p>Recommended setup for a fixed ChatGPT MCP URL.</p>
+            </div>
+            <button id="close-guide" class="secondary" type="button">Close</button>
+          </header>
+
+          <div class="guide-content">
+            <section>
+              <h3>1. Install Cloudflare Tunnel</h3>
+              <p>Install the Cloudflare Tunnel client, then reopen BridgeDesk and select Refresh Checks.</p>
+              <pre class="guide-code">winget install --id Cloudflare.cloudflared</pre>
+              <button
+                class="secondary link-button"
+                type="button"
+                data-open-external="https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/downloads/"
+              >
+                Cloudflare Downloads
+              </button>
+            </section>
+
+            <section>
+              <h3>2. Use Quick Tunnel</h3>
+              <ol>
+                <li>Choose one project folder.</li>
+                <li>Select Quick mode.</li>
+                <li>Select Save Config, then Start Tunnel.</li>
+                <li>Wait for a trycloudflare.com URL, then select Start Server.</li>
+                <li>Copy the MCP URL into ChatGPT. If the Quick URL changes later, update or recreate the ChatGPT app connection.</li>
+              </ol>
+            </section>
+
+            <section>
+              <h3>3. Use Permanent Tunnel</h3>
+              <ol>
+                <li>Choose one project folder. Do not choose the whole drive or whole user folder.</li>
+                <li>Select Permanent mode.</li>
+                <li>Set Tunnel name to bridgedesk.</li>
+                <li>Enter the fixed public URL without /mcp, for example https://mcp.yourdomain.com.</li>
+                <li>Select Save Config, Cloudflare Login, Create Tunnel, Route DNS, Start Permanent Tunnel, then Start Server.</li>
+              </ol>
+            </section>
+
+            <section>
+              <h3>4. Check Cloudflare Security</h3>
+              <p>
+                Turn off Cloudflare Bot Fight Mode for the BridgeDesk domain. ChatGPT uses automated server requests,
+                and Bot Fight Mode can block the OAuth connection after the owner password page.
+              </p>
+              <p>Block AI bots can usually stay on. Turn it off only if ChatGPT still cannot connect.</p>
+            </section>
+
+            <section>
+              <h3>5. Add BridgeDesk in ChatGPT</h3>
+              <ol>
+                <li>Open ChatGPT Settings, then Apps.</li>
+                <li>Create a new app named BridgeDesk.</li>
+                <li>Use Server URL mode and paste the MCP URL from BridgeDesk.</li>
+                <li>Keep Authentication as OAuth.</li>
+                <li>Accept the custom MCP warning, then create or connect.</li>
+                <li>Paste the owner password from BridgeDesk when the approval page opens.</li>
+              </ol>
+            </section>
+
+            <section>
+              <h3>6. Switch Project Folder</h3>
+              <ol>
+                <li>Select Choose beside Project folder and pick the new folder.</li>
+                <li>Select Stop Server, then Start Server again.</li>
+                <li>In Permanent mode, the MCP URL stays the same. In Quick mode, update ChatGPT only if the tunnel URL changed.</li>
+              </ol>
+              <p>
+                If ChatGPT shows Stop thinking after switching folders, wait. It may ask you to reconnect BridgeDesk.
+                Reconnect with the owner password and let the same run continue.
+              </p>
+            </section>
+
+            <section>
+              <h3>7. Daily Use</h3>
+              <p>
+                Start Permanent Tunnel and Start Server before using ChatGPT. You can change the project folder without
+                changing the MCP URL. Use Stop All when you want to shut down both BridgeDesk processes.
+              </p>
+              <p>In ChatGPT, ask: Use BridgeDesk and open the selected project folder.</p>
+            </section>
+
+            <section>
+              <h3>Troubleshooting</h3>
+              <ul>
+                <li>If ChatGPT fails after the owner password, disable Cloudflare Bot Fight Mode.</li>
+                <li>If the URL shows /mcp/mcp, remove /mcp from Fixed public URL and save again.</li>
+                <li>If ChatGPT connects but shows no actions, click Refresh in ChatGPT or recreate the app entry.</li>
+                <li>If port 7676 is busy, stop the old BridgeDesk server or choose another port.</li>
+              </ul>
+              <button
+                class="secondary link-button"
+                type="button"
+                data-open-external="https://github.com/stanic-mah/bridgedesk/blob/main/docs/user-guide.md"
+              >
+                Full Online Guide
+              </button>
+            </section>
+          </div>
+        </section>
+      </div>
     </main>
     <script type="module" src="./renderer.js"></script>
   </body>

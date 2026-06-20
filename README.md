@@ -61,6 +61,14 @@ BridgeDesk supports two tunnel modes:
 Use Permanent Tunnel if you do not want to re-add the MCP server in ChatGPT
 after closing the app or restarting the computer.
 
+For step-by-step setup, including Cloudflare Tunnel installation, Permanent
+Tunnel setup, ChatGPT connection, and troubleshooting, see
+[docs/user-guide.md](docs/user-guide.md).
+
+Important Cloudflare note: if ChatGPT fails after you enter the BridgeDesk owner
+password, turn off Cloudflare Bot Fight Mode for the BridgeDesk domain. Bot
+Fight Mode can block ChatGPT's OAuth requests before they reach BridgeDesk.
+
 If Cloudflare Tunnel is not installed, paste any HTTPS tunnel URL into the
 launcher. The URL should point to:
 

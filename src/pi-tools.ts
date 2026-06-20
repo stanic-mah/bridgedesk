@@ -1,11 +1,16 @@
 import {
+  mkdir,
+  readFile,
+  writeFile,
+} from "node:fs/promises";
+import { dirname } from "node:path";
+import {
   createBashTool,
   createEditTool,
   createFindTool,
   createGrepTool,
   createLsTool,
   createReadTool,
-  createWriteTool,
   type BashToolInput,
   type EditToolInput,
   type EditToolDetails,
@@ -78,13 +83,26 @@ export async function readFileTool(input: ReadToolInput, context: ToolContext): 
 }
 
 export async function writeFileTool(input: WriteToolInput, context: ToolContext): Promise<ToolResponse> {
-  const path = resolveAllowedPath(input.path, context.cwd, [context.root]);
-  const tool = createWriteTool(context.cwd);
+  try {
+    const path = resolveAllowedPath(input.path, context.cwd, [context.root]);
+    await mkdir(dirname(path), { recursive: true });
+    await writeFile(path, input.content, "utf8");
+    const written = await readFile(path, "utf8");
+    if (written !== input.content) {
+      throw new Error(`Write verification failed for ${path}.`);
+    }
 
-  return runTool((params) => tool.execute("write_file", params), {
-    path,
-    content: input.content,
-  }, context);
+    return {
+      content: [
+        {
+          type: "text",
+          text: `Successfully wrote ${Buffer.byteLength(input.content, "utf8")} bytes to ${path}`,
+        },
+      ],
+    };
+  } catch (error) {
+    return { content: formatToolError(error), isError: true };
+  }
 }
 
 export async function editFileTool(input: EditToolInput, context: ToolContext): Promise<ToolResponse<EditToolDetails>> {

@@ -1,5 +1,30 @@
 # BridgeDesk Update Log
 
+## 1.2.13
+
+- Hardened the BridgeDesk write tool so new files are written directly through the local filesystem and verified before reporting success.
+- Added coverage for creating a new file inside a workspace and blocking writes outside the selected project folder.
+
+## 1.2.12
+
+- Expanded the user guide with a full Quick Tunnel walkthrough.
+- Added project-folder switching instructions, including when to stop and restart the server.
+- Documented the ChatGPT reconnect behavior that can appear after switching folders, including waiting through the temporary "Stop thinking" state and reconnecting with the owner password.
+- Rebuilt the Windows app path so the installed `BridgeDesk.exe` can use the real BridgeDesk icon instead of the old embedded icon.
+
+## 1.2.11
+
+- Improved ChatGPT workspace startup so `open_workspace` can open the selected BridgeDesk project folder when the path is blank, `.`, `selected project`, or the selected folder name.
+- Updated the `open_workspace` tool description to show the configured BridgeDesk project folder and tell MCP clients to use `.` for the selected project.
+- Updated setup guidance so users can ask ChatGPT to open the selected BridgeDesk project instead of manually typing a Windows path.
+
+## 1.2.10
+
+- Added a full user guide for first-time setup, Cloudflare Tunnel installation, Permanent Tunnel setup, ChatGPT connection, daily use, and troubleshooting.
+- Added an in-app Guide panel so users can follow the main setup steps directly inside the BridgeDesk launcher.
+- Updated README and setup documentation to point users to the complete guide and the Cloudflare Bot Fight Mode requirement for ChatGPT connections.
+- Replaced placeholder BD marks with the real BridgeDesk icon in the desktop launcher, tray, window, and Windows installer metadata.
+
 ## 1.2.9
 
 - Fixed tunneled OAuth requests by trusting proxy headers only from the local Cloudflare connector when BridgeDesk is served through a public HTTPS tunnel.
