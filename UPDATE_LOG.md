@@ -1,5 +1,18 @@
 # BridgeDesk Update Log
 
+## 1.2.14
+
+- Replaced the BridgeDesk app icon with a generated bridge-and-code mark and regenerated the Windows icon assets.
+- Confirmed the default MCP tool surface is minimal, uses short tool names, and keeps full tool-result widgets enabled by default.
+- Confirmed the aggregate review tool uses `show_changes` naming and aligned checkpoint wording.
+- Added the restart-on-change local development server and removed the older release/dependency helper flow from normal development.
+- Added SQLite migrations for existing installations.
+- Added OAuth client, access-token, and refresh-token persistence so authenticated MCP clients can continue working across BridgeDesk restarts.
+- Added transactional refresh-token rotation so reused or concurrently consumed refresh tokens are rejected.
+- Hardened local SQLite state storage with safer file permissions, WAL mode, normal synchronous mode, busy timeout, and foreign keys.
+- Added clean shutdown handling for the server, CLI `serve` command, OAuth store, and workspace store.
+- Improved workspace result cards so expanded details show a loading spinner and recover cleanly if heavy payload loading fails.
+
 ## 1.2.13
 
 - Hardened the BridgeDesk write tool so new files are written directly through the local filesystem and verified before reporting success.

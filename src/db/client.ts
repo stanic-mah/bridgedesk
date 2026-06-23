@@ -1,8 +1,9 @@
-import { mkdirSync } from "node:fs";
+import { chmodSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import Database from "better-sqlite3";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import * as schema from "./schema.js";
+import { migrateDatabase } from "./migrations.js";
 
 export type SqliteDatabase = Database.Database;
 export type AppDatabase = ReturnType<typeof createDrizzleDatabase>;
@@ -18,10 +19,16 @@ export function databasePath(stateDir: string): string {
 }
 
 export function openDatabase(stateDir: string): DatabaseHandle {
-  mkdirSync(stateDir, { recursive: true });
-  const sqlite = new Database(databasePath(stateDir));
+  mkdirSync(stateDir, { recursive: true, mode: 0o700 });
+  chmodIfSupported(stateDir, 0o700);
+  const path = databasePath(stateDir);
+  const sqlite = new Database(path);
+  chmodIfSupported(path, 0o600);
   sqlite.pragma("journal_mode = WAL");
+  sqlite.pragma("synchronous = NORMAL");
+  sqlite.pragma("busy_timeout = 5000");
   sqlite.pragma("foreign_keys = ON");
+  migrateDatabase(sqlite);
 
   return {
     sqlite,
@@ -32,4 +39,12 @@ export function openDatabase(stateDir: string): DatabaseHandle {
 
 function createDrizzleDatabase(sqlite: SqliteDatabase) {
   return drizzle(sqlite, { schema });
+}
+
+function chmodIfSupported(path: string, mode: number): void {
+  try {
+    chmodSync(path, mode);
+  } catch {
+    // Windows permissions are ACL-based; chmod is best effort there.
+  }
 }

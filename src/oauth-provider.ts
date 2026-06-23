@@ -15,6 +15,7 @@ import {
   type OAuthTokens,
 } from "@modelcontextprotocol/sdk/shared/auth.js";
 import { checkResourceAllowed, resourceUrlFromServerUrl } from "@modelcontextprotocol/sdk/shared/auth-utils.js";
+import { SqliteOAuthStore } from "./oauth-store.js";
 
 export interface OAuthConfig {
   ownerToken: string;
@@ -221,6 +222,7 @@ export class InMemoryOAuthClientsStore implements OAuthRegisteredClientsStore {
     private readonly allowedRedirectHosts: string[],
     private readonly fetchClientMetadata: FetchClientMetadata = fetch,
     private readonly persistencePath?: string,
+    private readonly oauthStore?: SqliteOAuthStore,
   ) {
     this.loadPersistedClients();
   }
@@ -228,10 +230,16 @@ export class InMemoryOAuthClientsStore implements OAuthRegisteredClientsStore {
   getClient(clientId: string): OAuthClientInformationFull | undefined | Promise<OAuthClientInformationFull | undefined> {
     const registered = this.clients.get(clientId);
     if (registered) return registered;
+    const stored = this.oauthStore?.getClient(clientId);
+    if (stored && this.clientAllowed(stored)) {
+      this.clients.set(stored.client_id, stored);
+      return stored;
+    }
     const legacyClient = legacyBridgeDeskClient(clientId, this.allowedRedirectHosts);
     if (legacyClient) {
       this.clients.set(legacyClient.client_id, legacyClient);
       this.persistClients();
+      this.oauthStore?.saveClient(legacyClient);
       return legacyClient;
     }
     if (!clientMetadataDocumentAllowed(clientId, this.allowedRedirectHosts)) return undefined;
@@ -256,6 +264,7 @@ export class InMemoryOAuthClientsStore implements OAuthRegisteredClientsStore {
     };
     this.clients.set(registered.client_id, registered);
     this.persistClients();
+    this.oauthStore?.saveClient(registered);
     return registered;
   }
 
@@ -278,6 +287,7 @@ export class InMemoryOAuthClientsStore implements OAuthRegisteredClientsStore {
       if (!client) return undefined;
       this.clients.set(client.client_id, client);
       this.persistClients();
+      this.oauthStore?.saveClient(client);
       return client;
     } catch {
       return undefined;
@@ -303,6 +313,7 @@ export class InMemoryOAuthClientsStore implements OAuthRegisteredClientsStore {
         if (!result.success) continue;
         if (!result.data.redirect_uris.every((uri) => redirectHostAllowed(uri, this.allowedRedirectHosts))) continue;
         this.clients.set(result.data.client_id, result.data);
+        this.oauthStore?.saveClient(result.data);
       }
     } catch {
       // A corrupt cache should not prevent BridgeDesk from starting.
@@ -327,6 +338,13 @@ export class InMemoryOAuthClientsStore implements OAuthRegisteredClientsStore {
       clientMetadataDocumentAllowed(client.client_id, this.allowedRedirectHosts)
     );
   }
+
+  private clientAllowed(client: OAuthClientInformationFull): boolean {
+    return (
+      client.redirect_uris.every((uri) => redirectHostAllowed(uri, this.allowedRedirectHosts)) &&
+      this.shouldPersistClient(client)
+    );
+  }
 }
 
 export class SingleUserOAuthProvider implements OAuthServerProvider {
@@ -334,17 +352,21 @@ export class SingleUserOAuthProvider implements OAuthServerProvider {
   private readonly codes = new Map<string, AuthorizationCodeRecord>();
   private readonly accessTokens = new Map<string, AccessTokenRecord>();
   private readonly refreshTokens = new Map<string, RefreshTokenRecord>();
+  private readonly oauthStore?: SqliteOAuthStore;
   private readonly resourceServerUrl: URL;
 
   constructor(
     private readonly config: OAuthConfig,
     resourceServerUrl: URL,
+    stateDir?: string,
   ) {
     this.resourceServerUrl = resourceUrlFromServerUrl(resourceServerUrl);
+    this.oauthStore = stateDir ? new SqliteOAuthStore(stateDir) : undefined;
     this.clientsStore = new InMemoryOAuthClientsStore(
       config.allowedRedirectHosts,
       fetch,
       config.clientStorePath,
+      this.oauthStore,
     );
   }
 
@@ -434,7 +456,8 @@ export class SingleUserOAuthProvider implements OAuthServerProvider {
     scopes?: string[],
     resource?: URL,
   ): Promise<OAuthTokens> {
-    const record = this.refreshTokens.get(hashToken(refreshToken));
+    const refreshTokenHash = hashToken(refreshToken);
+    const record = this.oauthStore?.getRefreshToken(refreshTokenHash) ?? this.refreshTokens.get(refreshTokenHash);
     if (!record || record.clientId !== client.client_id || record.expiresAt < Math.floor(Date.now() / 1000)) {
       throw new InvalidGrantError("Invalid refresh token");
     }
@@ -447,12 +470,19 @@ export class SingleUserOAuthProvider implements OAuthServerProvider {
       throw new AccessDeniedError("Refresh token cannot grant requested scopes");
     }
 
-    this.refreshTokens.delete(hashToken(refreshToken));
-    return this.issueTokens(client.client_id, requestedScopes, resource ?? record.resource);
+    const recordResource = record.resource instanceof URL
+      ? record.resource
+      : record.resource
+        ? new URL(record.resource)
+        : undefined;
+    if (!this.oauthStore) {
+      this.refreshTokens.delete(refreshTokenHash);
+    }
+    return this.issueTokens(client.client_id, requestedScopes, resource ?? recordResource, refreshTokenHash);
   }
 
   async verifyAccessToken(token: string): Promise<AuthInfo> {
-    const record = this.accessTokens.get(hashToken(token));
+    const record = this.oauthStore?.getAccessToken(hashToken(token)) ?? this.accessTokens.get(hashToken(token));
     if (!record || record.expiresAt < Math.floor(Date.now() / 1000)) {
       throw new InvalidTokenError("Invalid or expired access token");
     }
@@ -462,7 +492,11 @@ export class SingleUserOAuthProvider implements OAuthServerProvider {
       clientId: record.clientId,
       scopes: record.scopes,
       expiresAt: record.expiresAt,
-      resource: record.resource,
+      resource: record.resource instanceof URL
+        ? record.resource
+        : record.resource
+          ? new URL(record.resource)
+          : undefined,
     };
   }
 
@@ -470,6 +504,12 @@ export class SingleUserOAuthProvider implements OAuthServerProvider {
     const hashed = hashToken(request.token);
     this.accessTokens.delete(hashed);
     this.refreshTokens.delete(hashed);
+    this.oauthStore?.deleteAccessToken(hashed);
+    this.oauthStore?.deleteRefreshToken(hashed);
+  }
+
+  close(): void {
+    this.oauthStore?.close();
   }
 
   private validCodeRecord(
@@ -483,27 +523,60 @@ export class SingleUserOAuthProvider implements OAuthServerProvider {
     return record;
   }
 
-  private issueTokens(clientId: string, scopes: string[], resource?: URL): OAuthTokens {
+  private issueTokens(
+    clientId: string,
+    scopes: string[],
+    resource?: URL,
+    consumedRefreshTokenHash?: string,
+  ): OAuthTokens {
     const now = Math.floor(Date.now() / 1000);
     const accessToken = randomToken();
     const refreshToken = randomToken();
     const accessExpiresAt = now + this.config.accessTokenTtlSeconds;
     const refreshExpiresAt = now + this.config.refreshTokenTtlSeconds;
 
-    this.accessTokens.set(hashToken(accessToken), {
+    const accessTokenHash = hashToken(accessToken);
+    const refreshTokenHash = hashToken(refreshToken);
+
+    if (this.oauthStore) {
+      const saved = this.oauthStore.saveTokenPair(
+        {
+          accessTokenHash,
+          accessToken: {
+            clientId,
+            scopes,
+            expiresAt: accessExpiresAt,
+            resource: resource?.href,
+          },
+          refreshTokenHash,
+          refreshToken: {
+            clientId,
+            scopes,
+            expiresAt: refreshExpiresAt,
+            resource: resource?.href,
+          },
+        },
+        consumedRefreshTokenHash,
+      );
+      if (!saved) {
+        throw new InvalidGrantError("Invalid refresh token");
+      }
+    } else {
+      this.accessTokens.set(accessTokenHash, {
       token: accessToken,
       clientId,
       scopes,
       expiresAt: accessExpiresAt,
       resource,
-    });
-    this.refreshTokens.set(hashToken(refreshToken), {
-      token: refreshToken,
-      clientId,
-      scopes,
-      expiresAt: refreshExpiresAt,
-      resource,
-    });
+      });
+      this.refreshTokens.set(refreshTokenHash, {
+        token: refreshToken,
+        clientId,
+        scopes,
+        expiresAt: refreshExpiresAt,
+        resource,
+      });
+    }
 
     return {
       access_token: accessToken,
