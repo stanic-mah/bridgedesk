@@ -1,5 +1,11 @@
 # BridgeDesk Update Log
 
+## 1.2.15
+
+- Added Cloudflare Logout beside Cloudflare Login in Permanent Tunnel setup.
+- Documented that Cloudflare Logout removes the local Cloudflare login certificate while keeping existing named tunnel credentials.
+- Added Cloudflare WAF Skip rule troubleshooting in the full guide and in-app guide for cases where disabling Bot Fight Mode alone does not fix ChatGPT connection failures.
+
 ## 1.2.14
 
 - Replaced the BridgeDesk app icon with a generated bridge-and-code mark and regenerated the Windows icon assets.

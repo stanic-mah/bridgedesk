@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld("bridgeDesk", {
   saveConfig: (input: unknown) => ipcRenderer.invoke("config:save", input),
   startTunnel: (input: unknown) => ipcRenderer.invoke("tunnel:start", input),
   cloudflareLogin: () => ipcRenderer.invoke("cloudflare:login"),
+  cloudflareLogout: () => ipcRenderer.invoke("cloudflare:logout"),
   createNamedTunnel: (input: unknown) => ipcRenderer.invoke("cloudflare:createTunnel", input),
   routeTunnelDns: (input: unknown) => ipcRenderer.invoke("cloudflare:routeDns", input),
   startServer: (input: unknown) => ipcRenderer.invoke("server:start", input),

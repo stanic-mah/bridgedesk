@@ -142,6 +142,11 @@ BridgeDesk adds `/mcp` automatically.
 10. Select **Start Permanent Tunnel**.
 11. Select **Start Server**.
 
+Use **Cloudflare Logout** only when you need to remove this computer's
+Cloudflare login and sign in again, for example when switching Cloudflare
+accounts. Logout removes the local Cloudflare login certificate, but keeps
+existing named tunnel credentials so already-created tunnels can still run.
+
 When both the tunnel and server are running, BridgeDesk shows the final MCP URL:
 
 ```text
@@ -263,6 +268,45 @@ Install `cloudflared`, reopen BridgeDesk, then select **Refresh Checks**.
 Turn off Cloudflare **Bot Fight Mode** for the domain. This is the most common
 cause when the password page works but ChatGPT cannot finish connecting.
 
+If Bot Fight Mode is already off and ChatGPT still cannot connect, add a
+Cloudflare WAF **Skip** custom rule for the BridgeDesk hostname. This is useful
+when WAF managed rules, rate limiting, Super Bot Fight Mode, Browser Integrity
+Check, or later custom rules are still blocking ChatGPT's OAuth requests.
+
+In Cloudflare, go to **Security > WAF > Custom rules**, create a new rule, and
+fill it like this:
+
+```text
+Rule name:
+BridgeDesk MCP bypass
+
+When incoming requests match:
+Field: Hostname
+Operator: equals
+Value: mcp.yourdomain.com
+```
+
+For your current hostname, the expression preview should look like this:
+
+```text
+(http.host eq "mcp.yourdomain.com")
+```
+
+Then set **Choose action** to **Skip**. For the skip options, select every
+available security feature that could interfere with BridgeDesk, especially:
+
+- WAF Managed Rules
+- Rate Limiting Rules
+- Super Bot Fight Mode, if shown
+- Browser Integrity Check, if shown
+- remaining custom rules that run after this bypass rule
+
+Then select **Deploy**.
+
+Important: Cloudflare's normal Free **Bot Fight Mode** cannot be skipped by a WAF
+Skip rule. If that specific feature is causing the problem, leave it disabled
+for the BridgeDesk domain.
+
 ### The MCP URL shows `/mcp/mcp`
 
 The **Fixed public URL** field should contain only the hostname:
@@ -308,4 +352,6 @@ BridgeDesk again. Reconnect with the BridgeDesk owner password, then continue.
 - Cloudflare Tunnel downloads: https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/downloads/
 - Cloudflare Tunnel setup: https://developers.cloudflare.com/tunnel/setup/
 - Cloudflare Bot Fight Mode false positives: https://developers.cloudflare.com/bots/troubleshooting/false-positives/
+- Cloudflare WAF Skip custom rule: https://developers.cloudflare.com/waf/custom-rules/skip/
+- Cloudflare WAF Skip options: https://developers.cloudflare.com/waf/custom-rules/skip/options/
 - OpenAI MCP documentation: https://developers.openai.com/api/docs/mcp

@@ -311,6 +311,10 @@ p {
   min-width: 0;
 }
 
+.cloudflare-actions .wide {
+  grid-column: 1 / -1;
+}
+
 [hidden] {
   display: none !important;
 }

@@ -83,9 +83,10 @@
               </div>
               <div class="cloudflare-actions">
                 <button id="cloudflare-login" class="secondary" type="button">Cloudflare Login</button>
+                <button id="cloudflare-logout" class="secondary" type="button">Cloudflare Logout</button>
                 <button id="create-named-tunnel" class="secondary" type="button">Create Tunnel</button>
                 <button id="route-tunnel-dns" class="secondary" type="button">Route DNS</button>
-                <button id="start-permanent-tunnel" type="button">Start Permanent Tunnel</button>
+                <button id="start-permanent-tunnel" class="wide" type="button">Start Permanent Tunnel</button>
               </div>
             </div>
 
@@ -166,6 +167,7 @@
                 <li>Set Tunnel name to bridgedesk.</li>
                 <li>Enter the fixed public URL without /mcp, for example https://mcp.yourdomain.com.</li>
                 <li>Select Save Config, Cloudflare Login, Create Tunnel, Route DNS, Start Permanent Tunnel, then Start Server.</li>
+                <li>Use Cloudflare Logout only when you need to remove this computer's Cloudflare login and sign in again.</li>
               </ol>
             </section>
 
@@ -216,6 +218,11 @@
               <h3>Troubleshooting</h3>
               <ul>
                 <li>If ChatGPT fails after the owner password, disable Cloudflare Bot Fight Mode.</li>
+                <li>
+                  If Bot Fight Mode is off and it still fails, add a Cloudflare WAF Skip custom rule for the
+                  BridgeDesk hostname. Match Hostname equals your MCP hostname, choose Skip, then skip WAF Managed Rules,
+                  Rate Limiting Rules, Super Bot Fight Mode if shown, Browser Integrity Check if shown, and later custom rules.
+                </li>
                 <li>If the URL shows /mcp/mcp, remove /mcp from Fixed public URL and save again.</li>
                 <li>If ChatGPT connects but shows no actions, click Refresh in ChatGPT or recreate the app entry.</li>
                 <li>If port 7676 is busy, stop the old BridgeDesk server or choose another port.</li>

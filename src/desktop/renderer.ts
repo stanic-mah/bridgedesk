@@ -96,6 +96,7 @@ declare global {
       saveConfig(input: ConfigInput): Promise<ConfigSummary>;
       startTunnel(input: TunnelInput): Promise<void>;
       cloudflareLogin(): Promise<void>;
+      cloudflareLogout(): Promise<void>;
       createNamedTunnel(input: { tunnelName: string | null }): Promise<void>;
       routeTunnelDns(input: { tunnelName: string | null; hostname: string | null }): Promise<void>;
       startServer(input: ConfigInput): Promise<void>;
@@ -176,6 +177,7 @@ const elements = {
   quickSettings: requiredElement<HTMLDivElement>("quick-tunnel-settings"),
   permanentSettings: requiredElement<HTMLDivElement>("permanent-tunnel-settings"),
   cloudflareLogin: requiredElement<HTMLButtonElement>("cloudflare-login"),
+  cloudflareLogout: requiredElement<HTMLButtonElement>("cloudflare-logout"),
   createNamedTunnel: requiredElement<HTMLButtonElement>("create-named-tunnel"),
   routeTunnelDns: requiredElement<HTMLButtonElement>("route-tunnel-dns"),
 };
@@ -368,6 +370,7 @@ function renderControls(): void {
   elements.copyMcp.disabled = !state.mcpUrl;
   elements.copyOwner.disabled = !state.ownerPassword;
   elements.cloudflareLogin.disabled = setupBusy;
+  elements.cloudflareLogout.disabled = setupBusy;
   elements.createNamedTunnel.disabled = setupBusy || !hasTunnelName;
   elements.routeTunnelDns.disabled = setupBusy || !hasTunnelName || !hasPublicUrl;
   elements.checkUpdates.disabled =
@@ -492,6 +495,9 @@ elements.startPermanentTunnel.addEventListener("click", () => void startTunnelFr
 elements.startServer.addEventListener("click", () => void startServerFromForm());
 elements.cloudflareLogin.addEventListener("click", () => {
   void runCloudflareAction("Cloudflare login", () => window.bridgeDesk.cloudflareLogin());
+});
+elements.cloudflareLogout.addEventListener("click", () => {
+  void runCloudflareAction("Cloudflare logout", () => window.bridgeDesk.cloudflareLogout());
 });
 elements.createNamedTunnel.addEventListener("click", () => {
   void runCloudflareAction("Create named tunnel", () =>

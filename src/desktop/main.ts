@@ -1,5 +1,5 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { createServer } from "node:net";
 import { homedir } from "node:os";
@@ -1149,6 +1149,24 @@ function cloudflareLogin(): Promise<void> {
   return runCloudflaredTask("Cloudflare login", ["tunnel", "login"], 300000);
 }
 
+function cloudflareLogout(): void {
+  if (cloudflaredSetupProcess) {
+    throw new Error("A Cloudflare setup step is already running.");
+  }
+
+  const certPath = join(homedir(), ".cloudflared", "cert.pem");
+  if (!existsSync(certPath)) {
+    sendLog("tunnel", "Cloudflare logout: no login certificate found.");
+    return;
+  }
+
+  unlinkSync(certPath);
+  sendLog(
+    "tunnel",
+    "Cloudflare logout completed. Existing named tunnel credentials were kept, so created tunnels can still run.",
+  );
+}
+
 function createNamedTunnel(input: CloudflareTunnelInput): Promise<void> {
   const tunnelName = normalizeTunnelName(input.tunnelName);
   return runCloudflaredTask("Create named tunnel", ["tunnel", "create", tunnelName]);
@@ -1231,6 +1249,7 @@ ipcMain.handle("config:get", () => getConfigSummary());
 ipcMain.handle("config:save", (_event, input: SaveConfigInput) => saveConfig(input));
 ipcMain.handle("tunnel:start", (_event, input: StartTunnelInput) => startTunnel({ ...input, port: input.port || DEFAULT_PORT }));
 ipcMain.handle("cloudflare:login", () => cloudflareLogin());
+ipcMain.handle("cloudflare:logout", () => cloudflareLogout());
 ipcMain.handle("cloudflare:createTunnel", (_event, input: CloudflareTunnelInput) => createNamedTunnel(input));
 ipcMain.handle("cloudflare:routeDns", (_event, input: CloudflareTunnelInput) => routeTunnelDns(input));
 ipcMain.handle("server:start", (_event, input: SaveConfigInput) => startServer(input));
