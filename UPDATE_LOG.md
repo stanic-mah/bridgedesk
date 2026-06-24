@@ -1,5 +1,11 @@
 # BridgeDesk Update Log
 
+## 1.2.16
+
+- Resolved the Windows Node executable before starting the bundled BridgeDesk CLI and server.
+- Started the bundled BridgeDesk CLI and server without the Windows shell so install paths and user folders with spaces are handled correctly.
+- Improved BridgeDesk CLI/server startup errors to show the Node executable path and bundled CLI path when launch fails.
+
 ## 1.2.15
 
 - Added Cloudflare Logout beside Cloudflare Login in Permanent Tunnel setup.

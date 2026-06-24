@@ -104,6 +104,10 @@ interface CloudflareTunnelInput {
   hostname?: string | null;
 }
 
+interface RunCommandOptions {
+  shell?: boolean;
+}
+
 const DEFAULT_PORT = 7676;
 const DEFAULT_TUNNEL_MODE: TunnelMode = "quick";
 const DEFAULT_PERMANENT_TUNNEL_NAME = "bridgedesk";
@@ -138,6 +142,7 @@ let cloudflaredSetupProcess: ChildProcess | null = null;
 let currentPublicBaseUrl: string | null = null;
 let currentOwnerToken: string | null = null;
 let currentTunnelMode: TunnelMode = DEFAULT_TUNNEL_MODE;
+let nodeExecutablePath: string | null = null;
 let isQuitting = false;
 let updaterConfigured = false;
 let updatePromptOpen = false;
@@ -653,10 +658,55 @@ function isWindowsAbsolutePath(command: string): boolean {
   return isWindows && /^[a-zA-Z]:[\\/]/.test(command);
 }
 
-function runCommand(command: string, args: string[], timeoutMs = 5000): Promise<{ ok: boolean; text: string }> {
+function isNodeExecutablePath(candidate: string): boolean {
+  const trimmed = candidate.trim();
+  if (!trimmed) return false;
+  if (isWindows) {
+    return isWindowsAbsolutePath(trimmed) && parse(trimmed).base.toLowerCase() === "node.exe";
+  }
+  return parse(trimmed).base === "node";
+}
+
+async function resolveNodeExecutable(): Promise<string> {
+  if (nodeExecutablePath) return nodeExecutablePath;
+
+  if (isWindows) {
+    const lookup = await runCommand("where.exe", ["node"]);
+    const candidate = lookup.text
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .find(isNodeExecutablePath);
+    if (candidate) {
+      nodeExecutablePath = candidate;
+      return nodeExecutablePath;
+    }
+  }
+
+  nodeExecutablePath = "node";
+  return nodeExecutablePath;
+}
+
+async function runBridgeDeskCli(args: string[], timeoutMs = 5000): Promise<{ ok: boolean; text: string }> {
+  const nodePath = await resolveNodeExecutable();
+  const result = await runCommand(nodePath, [cliPath, ...args], timeoutMs, { shell: false });
+  if (result.ok) return result;
+
+  const output = result.text ? `\n${result.text}` : "";
+  return {
+    ok: false,
+    text: `Could not start BridgeDesk CLI.\nNode: ${nodePath}\nCLI: ${cliPath}${output}`,
+  };
+}
+
+function runCommand(
+  command: string,
+  args: string[],
+  timeoutMs = 5000,
+  options: RunCommandOptions = {},
+): Promise<{ ok: boolean; text: string }> {
   return new Promise((resolveCommand) => {
     const child = spawn(command, args, {
-      shell: isWindowsAbsolutePath(command) ? false : commandShellOption(),
+      shell: options.shell ?? (isWindowsAbsolutePath(command) ? false : commandShellOption()),
       windowsHide: true,
       stdio: ["ignore", "pipe", "pipe"],
     });
@@ -840,7 +890,7 @@ async function getSystemChecks(port: number): Promise<SystemCheck[]> {
     checkCloudflared(),
     checkPort(port),
   ]);
-  const cli = await runCommand("node", [cliPath, "help"]);
+  const cli = await runBridgeDeskCli(["help"]);
   return [
     node,
     npm,
@@ -1069,8 +1119,9 @@ async function startServer(input: SaveConfigInput): Promise<void> {
     return;
   }
 
-  const child = spawn("node", [cliPath, "serve"], {
-    shell: commandShellOption(),
+  const nodePath = await resolveNodeExecutable();
+  const child = spawn(nodePath, [cliPath, "serve"], {
+    shell: false,
     windowsHide: true,
     stdio: ["ignore", "pipe", "pipe"],
     env: {
@@ -1089,7 +1140,9 @@ async function startServer(input: SaveConfigInput): Promise<void> {
 
   child.stdout?.on("data", (chunk: Buffer) => sendLog("server", chunk.toString()));
   child.stderr?.on("data", (chunk: Buffer) => sendLog("server", chunk.toString()));
-  child.on("error", (error) => sendLog("server", error.message));
+  child.on("error", (error) =>
+    sendLog("server", `Could not start BridgeDesk server.\nNode: ${nodePath}\nCLI: ${cliPath}\n${error.message}`),
+  );
   child.on("close", (code) => {
     sendLog("server", `BridgeDesk stopped with code ${code ?? "unknown"}`);
     serverProcess = null;
